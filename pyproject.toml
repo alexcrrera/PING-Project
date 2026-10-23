@@ -4,13 +4,20 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ping-base"
-version = "0.1.0"
-description = "PING rover base station controller input and diagnostic viewer"
+version = "0.2.0"
+description = "PING rover ground station with camera, attitude and replaceable telemetry"
 requires-python = ">=3.10"
-dependencies = ["pygame==2.6.1"]
+dependencies = ["nicegui==3.8.0", "pygame==2.6.1", "Pillow>=11.2,<13", "pyserial==3.5"]
+
+[project.optional-dependencies]
+camera = ["opencv-python>=4.11,<5"]
 
 [project.scripts]
+ping-base = "ping_base.cli:main"
 ping-controller = "ping_base.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+ping_base = ["telemetry/PROTOCOL.md"]
