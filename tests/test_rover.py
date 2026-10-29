@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from ping_base.rover import RoverView
+from ping_base.gimbal import GimbalPose
 
 
 class RoverViewTests(unittest.TestCase):
@@ -53,6 +54,20 @@ class RoverViewTests(unittest.TestCase):
         view = self.make_view()
         view.update_motion(SimpleNamespace(x_m=0, y_m=.25))
         view._ground.move.assert_called_once_with(0, -.25, 0)
+
+    def test_gimbal_moves_camera_head_independently_of_the_body(self):
+        view = self.make_view()
+        view._gimbal_yaw, view._gimbal_pitch = Mock(), Mock()
+        view.update_gimbal(GimbalPose(90, 30))
+        view._gimbal_yaw.rotate.assert_called_once_with(0, 0, -math.pi / 2)
+        view._gimbal_pitch.rotate.assert_called_once_with(math.pi / 6, 0, 0)
+        view.body.rotate.assert_not_called()
+
+    def test_camera_head_can_compensate_body_roll(self):
+        view = self.make_view()
+        view._gimbal_yaw, view._gimbal_pitch = Mock(), Mock()
+        view.update_gimbal(GimbalPose(0, 0, -12))
+        view._gimbal_pitch.rotate.assert_called_once_with(0, math.radians(-12), 0)
 
 
 if __name__ == "__main__":

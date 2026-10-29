@@ -1,24 +1,37 @@
-"""Browser keyboard bridge. Commands expire on the server if this bridge stops."""
+"""Dashboard shortcuts and driving bridge. Drive commands expire on the server."""
 
 KEYBOARD_SCRIPT = r"""
 (() => {
     if (window.pingKeyboardCleanup) window.pingKeyboardCleanup();
     const keys = new Set();
     const codes = new Set(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space']);
+    const gimbalKeys = new Set();
+    const gimbalCodes = new Set(['KeyI','KeyJ','KeyK','KeyL']);
     const abort = new AbortController();
     let held = false;
-    const editable = target => target?.closest?.('input,textarea,select,[contenteditable="true"],.q-dialog,.q-menu');
+    let gimbalHeld = false;
+    const editable = target => target?.closest?.('input,textarea,select,[role="slider"],[contenteditable="true"],.q-dialog,.q-menu,.filter-controls');
+    const shortcutsEnabled = () => !document.hidden && document.hasFocus()
+        && !document.body.classList.contains('q-body--dialog') && !editable(document.activeElement);
+    const gimbalEnabled = () => shortcutsEnabled()
+        && document.getElementById('virtual-drive-input')?.dataset.gimbal === 'true';
     const enabled = () => {
         const guard = document.getElementById('virtual-drive-input');
         return guard?.dataset.mode === 'keyboard' && guard?.dataset.enabled === 'true'
-            && !document.hidden && document.hasFocus()
-            && !document.body.classList.contains('q-body--dialog') && !editable(document.activeElement);
+            && shortcutsEnabled();
     };
     const emit = payload => { if (typeof emitEvent === 'function') emitEvent('virtual_drive', payload); };
+    const emitCamera = (name, payload = {}) => { if (typeof emitEvent === 'function') emitEvent(name, payload); };
+    const clearGimbal = () => {
+        gimbalKeys.clear();
+        if (gimbalHeld) emitCamera('camera_gimbal', {release:true});
+        gimbalHeld = false;
+    };
     const clear = () => {
         keys.clear();
         if (held) emit({release:true});
         held = false;
+        clearGimbal();
     };
     const send = () => {
         const has = (...names) => names.some(name => keys.has(name)) ? 1 : 0;
@@ -26,7 +39,24 @@ KEYBOARD_SCRIPT = r"""
               steering:has('KeyD','ArrowRight')-has('KeyA','ArrowLeft'), brake:keys.has('Space')});
         held = keys.size > 0;
     };
+    const sendGimbal = () => {
+        const has = name => gimbalKeys.has(name) ? 1 : 0;
+        emitCamera('camera_gimbal', {yaw:has('KeyL')-has('KeyJ'), pitch:has('KeyI')-has('KeyK')});
+        gimbalHeld = gimbalKeys.size > 0;
+    };
     document.addEventListener('keydown', event => {
+        if (event.code === 'KeyQ' || event.code === 'KeyR' || event.code === 'KeyZ' || gimbalCodes.has(event.code)) {
+            if (!shortcutsEnabled() || event.ctrlKey || event.altKey || event.metaKey || editable(event.target)) return;
+            if (event.code !== 'KeyQ' && !gimbalEnabled()) return;
+            event.preventDefault();
+            event.stopPropagation();
+            if (event.repeat) return;
+            if (event.code === 'KeyQ') emitCamera('camera_zoom');
+            else if (event.code === 'KeyR') { clearGimbal(); emitCamera('camera_home'); }
+            else if (event.code === 'KeyZ') emitCamera('camera_stabilization');
+            else { gimbalKeys.add(event.code); sendGimbal(); }
+            return;
+        }
         if (!codes.has(event.code)) return;
         if (!enabled() || event.ctrlKey || event.altKey || event.metaKey || editable(event.target)) { clear(); return; }
         event.preventDefault();
@@ -35,6 +65,11 @@ KEYBOARD_SCRIPT = r"""
         send();
     }, {signal:abort.signal,capture:true});
     document.addEventListener('keyup', event => {
+        if (gimbalCodes.has(event.code)) {
+            const wasHeld = gimbalKeys.delete(event.code);
+            if (wasHeld) { event.preventDefault(); event.stopPropagation(); sendGimbal(); }
+            return;
+        }
         if (!codes.has(event.code)) return;
         const wasHeld = keys.has(event.code);
         keys.delete(event.code);
@@ -44,8 +79,15 @@ KEYBOARD_SCRIPT = r"""
     document.addEventListener('visibilitychange', () => { if (document.hidden) clear(); }, {signal:abort.signal});
     document.addEventListener('focusin', event => { if (editable(event.target)) clear(); }, {signal:abort.signal});
     const heartbeat = setInterval(() => {
-        if (!enabled()) clear();
+        if (!shortcutsEnabled()) { clear(); return; }
+        if (!enabled()) {
+            keys.clear();
+            if (held) emit({release:true});
+            held = false;
+        }
         else if (keys.size) send();
+        if (!gimbalEnabled()) clearGimbal();
+        else if (gimbalKeys.size) sendGimbal();
     }, 100);
     window.pingKeyboardCleanup = () => { clear(); abort.abort(); clearInterval(heartbeat); };
     window.addEventListener('pagehide', window.pingKeyboardCleanup, {once:true,signal:abort.signal});

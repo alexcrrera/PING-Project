@@ -37,8 +37,10 @@ Helvetica/Arial is the fallback when Suisse is unavailable.
 
 The desktop dashboard fits the available viewport (including 1366 × 768 and
 1920 × 1080) with a flatter header and camera/model panels that share the
-remaining height. Narrow mobile screens and very short windows retain scrolling
-so controls remain accessible.
+remaining height. Matching left/right columns hold camera tools and telemetry.
+The left column scrolls independently and groups the filters with their active
+count and summary; additional tools can be added as further sections. Narrow
+screens stack these panels below the camera, with scrolling so controls remain accessible.
 
 - Select **Keyboard** under **Virtual drive**. Hold **W/S** or **Up/Down** for
   forward/reverse; **A/D** or **Left/Right** steer, including turning in place.
@@ -61,6 +63,40 @@ so controls remain accessible.
   receiver and clears its state/history. Camera and telemetry are independent:
   USB telemetry can be inspected with the virtual camera.
 - The camera toolbar toggles the crosshair and opens fullscreen video.
+- Use **Filters** in the left **Camera tools** column. Every effect is an
+  independent checkbox: stack **Enhanced contrast** (local CLAHE), **Edge
+  overlay** (yellow Canny outlines), **Noise reduction**, **Sharpen details**,
+  and **Invert colors** in any combination. Edge sensitivity and outline opacity
+  have separate 0–100 sliders; higher sensitivity reveals fainter edges.
+- **Night vision green**, **Amber phosphor**, **White phosphor**, **Thermal
+  style (simulated)**, and **Scanlines** add tactical display styling. Vision
+  effects blend in their listed order, with a shared **Vision effect mix**
+  slider. Thermal style maps image brightness to false color. Inversion follows
+  the color effects, outlines remain on top, and scanlines finish the image.
+- **Horizon overlay** adds an attitude ladder from fresh rover telemetry and
+  the virtual gimbal's tilt; it hides when camera/telemetry becomes stale.
+  **Reset** clears every effect and restores the original JPEG. Filter settings
+  belong to each browser page, and selected effects remain applied in fullscreen.
+  Click the camera after editing filters to resume keyboard shortcuts. All processing stays local.
+- Press **Q** to cycle camera zoom through **1× → 2× → 4× → 1×**. Each press
+  advances one level; holding the key does not repeat. The current zoom appears
+  in the camera overlay, including fullscreen. The shortcut works in either
+  drive mode and is ignored while typing or using connection dialogs.
+- The virtual camera has a two-axis gimbal. Hold **I/K** to tilt up/down and
+  **J/L** to pan left/right at 15°/s, or use the camera's arrow buttons for 1° steps.
+  Pan is limited to **±180°**, tilt to **±60°**. The camera image and 3D camera
+  mast follow the same mount angles independently of rover movement.
+- Press **R** (or the gimbal home button) to return pan and tilt to **0°**,
+  keeping the selected zoom. Releasing the keys holds the current angle; loss
+  of focus or connection stops movement. Gimbal controls are available for the
+  virtual camera, including fullscreen, and work in either drive mode.
+- Press **Z** to toggle virtual-camera stabilization, or click either stabilization
+  button. The camera shows **STAB ON / OFF**, and the left column shows the same
+  state. Stabilization holds camera heading and pitch while leveling roll as the
+  rover turns or tilts. I/J/K/L still aim the camera, and **R** returns it forward
+  while retaining the stabilization setting. **LIMIT** appears if the mount
+  reaches its pitch/roll compensation limits. The marker and Z remain available
+  in fullscreen. Holding Z toggles once; typing in fields does not toggle it.
 - Drag the 3D rover to orbit, scroll to zoom, and use its reset button to restore
   the view. Pitch, roll and heading follow telemetry. The model is an illustrative
   four-wheel chassis with suspension and a stereo camera mast, not final CAD.
@@ -81,8 +117,7 @@ labeled historical. Camera loss covers the last image with an offline message.
 # Add PS4 monitoring using the existing USB/Bluetooth adapter:
 .\.venv\Scripts\python.exe -m ping_base --controller
 
-# Optional USB camera or an OpenCV-supported video stream:
-.\.venv\Scripts\python.exe -m pip install -e ".[camera]"
+# USB camera or an OpenCV-supported video stream (OpenCV is included):
 .\.venv\Scripts\python.exe -m ping_base --camera 0 --controller
 ```
 

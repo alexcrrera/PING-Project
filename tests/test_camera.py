@@ -11,6 +11,7 @@ from unittest.mock import Mock
 from PIL import Image
 
 from ping_base.camera import OpenCVCameraSource, SimulatedCameraSource, _LatestFrameSource
+from ping_base.gimbal import GimbalPose
 
 
 def wait_until(predicate, timeout=2):
@@ -27,7 +28,7 @@ class CameraTests(unittest.TestCase):
     def motion(**values):
         return SimpleNamespace(x_m=values.get("x_m", 0), y_m=values.get("y_m", 0),
                                heading_deg=values.get("heading_deg", 0),
-                               pitch_deg=0, roll_deg=0)
+                               pitch_deg=values.get("pitch_deg", 0), roll_deg=values.get("roll_deg", 0))
 
     def test_bound_camera_is_still_at_idle_and_retraces_a_reversed_drive(self):
         source = SimulatedCameraSource(width=320, height=180)
@@ -60,10 +61,69 @@ class CameraTests(unittest.TestCase):
         self.assertLessEqual(len(source._terrain_cache), 100)
         self.assertEqual(first, source._terrain_chunk(0, 0))
 
+    def test_gimbal_pan_matches_rover_heading_without_moving_the_rover(self):
+        source = SimulatedCameraSource(width=320, height=180)
+        source.set_motion(self.motion())
+        # The fixed chassis is the only fixture that follows the rover's body.
+        with unittest.mock.patch.object(source, "_draw_fenders"):
+            source.set_motion(self.motion())
+            source.set_gimbal(GimbalPose(yaw_deg=90))
+            panned = source.render(0).tobytes()
+            source.set_motion(self.motion(heading_deg=90))
+            source.set_gimbal(GimbalPose())
+            self.assertEqual(panned, source.render(0).tobytes())
+
+    def test_gimbal_tilt_changes_view_and_home_restores_identical_frame(self):
+        source = SimulatedCameraSource(width=320, height=180)
+        source.set_motion(self.motion())
+        home = source.render(0).tobytes()
+        frames = {}
+        for yaw in (-90, 0, 90):
+            for pitch in (-60, -20, 20, 60):
+                source.set_gimbal(GimbalPose(yaw, pitch))
+                frame = source.render(0)
+                self.assertEqual(frame.size, (320, 180))
+                self.assertNotEqual(home, frame.tobytes())
+                frames[yaw, pitch] = frame.tobytes()
+        self.assertNotEqual(frames[0, 20], frames[0, -20])
+        self.assertNotEqual(frames[-90, -20], frames[90, -20])
+        source.set_gimbal(GimbalPose())
+        self.assertEqual(home, source.render(100).tobytes())
+
     def test_camera_rejects_nonfinite_pose_before_publishing_it(self):
         source = SimulatedCameraSource(width=320, height=180)
         with self.assertRaises(ValueError):
             source.set_motion(self.motion(x_m=float("nan")))
+
+    def test_compensated_camera_holds_world_image_during_body_rotation(self):
+        source = SimulatedCameraSource(width=320, height=180)
+        with unittest.mock.patch.object(source, "_draw_fenders"):
+            source.set_view(self.motion(), GimbalPose())
+            home = source.render(0).tobytes()
+            body = self.motion(heading_deg=35, pitch_deg=8, roll_deg=12)
+            source.set_view(body, GimbalPose())
+            self.assertNotEqual(home, source.render(0).tobytes())
+            source.set_view(body, GimbalPose(-35, -8, -12))
+            self.assertEqual(home, source.render(0).tobytes())
+
+    def test_roll_keeps_frame_dimensions_and_atomic_view_copies_inputs(self):
+        source = SimulatedCameraSource(width=320, height=180)
+        body = self.motion(roll_deg=15)
+        source.set_view(body, GimbalPose())
+        image = source.render(0)
+        self.assertEqual(image.size, (320, 180))
+        body.roll_deg = 0
+        self.assertEqual(image.tobytes(), source.render(0).tobytes())
+        with self.assertRaises(ValueError):
+            source.set_view(self.motion(), GimbalPose(roll_deg=float("nan")))
+
+    def test_roll_overscan_avoids_empty_borders(self):
+        image = Image.new("RGB", (320, 180), (40, 80, 120))
+        for angle in (-45, -15, 15, 45):
+            with self.subTest(angle=angle):
+                rotated = SimulatedCameraSource._apply_roll(image, angle)
+                self.assertEqual(rotated.size, image.size)
+                self.assertEqual(rotated.getextrema(), ((40, 40), (80, 80), (120, 120)))
 
     def test_simulation_publishes_real_jpegs_and_stops_without_leaking_worker(self):
         source = SimulatedCameraSource(width=320, height=180, fps=30)

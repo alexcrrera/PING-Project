@@ -4,12 +4,16 @@ from __future__ import annotations
 
 from datetime import datetime
 from html import escape
+import math
 import time
+from typing import Literal
+from urllib.parse import urlencode
 
-from fastapi import Response
+from fastapi import Query, Response
 from nicegui import app, context, ui
 
 from .fonts import register_fonts
+from .camera_filters import CameraFilterSettings, CameraFrameProcessor, FILTER_LABELS, VISION_EFFECTS
 from .keyboard import KEYBOARD_SCRIPT
 from .rover import RoverView
 from .station import BaseStation
@@ -31,6 +35,7 @@ ICONS = {
     "rover": '<path d="m3 8 9-5 9 5v9l-9 5-9-5zM3 8l9 5 9-5M12 13v9"/>',
     "telemetry": '<path d="M3 13h4l3-8 4 15 3-9h4"/>',
 }
+CAMERA_ZOOM_LEVELS = (1, 2, 4)
 
 
 def _icon(name: str) -> str:
@@ -53,6 +58,22 @@ def sparkline(history, fresh: bool) -> str:
             f'<path d="{path}" stroke="#c4c9ab" stroke-width="1.2" fill="none"/></svg>')
 
 
+def horizon_overlay(pitch: float, roll: float) -> str:
+    """A camera attitude ladder; positive pitch moves the zero line downward."""
+    if not math.isfinite(pitch) or not math.isfinite(roll):
+        return ""
+    marks = []
+    for degrees in (-20, -10, 0, 10, 20):
+        y = -degrees * 3
+        width = 100 if degrees == 0 else 65
+        marks.append(f'<path d="M{-width},{y}h{width - 14}M14,{y}H{width}"/>'
+                     f'<text x="{width + 7}" y="{y + 3}">{degrees:+d}°</text>')
+    return ('<svg viewBox="-150 -90 300 180" aria-hidden="true">'
+            f'<g transform="rotate({-roll:.2f}) translate(0 {pitch * 3:.2f})" '
+            'fill="none" stroke="#e5eacb" stroke-width="1" opacity=".8">'
+            + "".join(marks) + '</g></svg>')
+
+
 class Dashboard:
     def __init__(self, station: BaseStation, *, font_css: str = "", has_suisse: bool = True):
         self.station = station
@@ -62,13 +83,20 @@ class Dashboard:
         self._last_camera = -1
         self._last_history_count = -1
         self.reticle_visible = True
+        self._resetting_filters = False
+        self._last_horizon: tuple[float, float] | None = None
+        self.camera_zoom_index = 0
         ui.colors(primary="#d2d6b9", secondary="#999b91", accent="#d2d6b9")
         ui.add_css(font_css + "\n" + CSS)
         self._settings()
         self._build()
         self.input_guard = ui.element("div").props('id="virtual-drive-input" data-mode="keyboard" data-enabled="false"').style("display:none")
         ui.on("virtual_drive", self._drive_event)
-        self.client.on_disconnect(lambda: self.station.drive.clear(self.client.id))
+        ui.on("camera_zoom", self.cycle_camera_zoom)
+        ui.on("camera_gimbal", self._gimbal_event)
+        ui.on("camera_home", self.reset_gimbal)
+        ui.on("camera_stabilization", self.toggle_stabilization)
+        self.client.on_disconnect(self._release_inputs)
         ui.add_body_html(f"<script>{KEYBOARD_SCRIPT}</script>")
         self.refresh()
         # Page timers are disposed with their browser client; service polling
@@ -110,6 +138,7 @@ class Dashboard:
                         self.pause_button = ui.button("Pause simulation", icon="pause", on_click=self.toggle_pause).props("flat dense")
                         ui.button("Connections", icon="tune", on_click=self.open_settings).props("outline dense")
                 with ui.element("div").classes("layout"):
+                    self._tools_sidebar()
                     with ui.element("div").classes("visuals"):
                         self._camera()
                         self._pose()
@@ -135,20 +164,108 @@ class Dashboard:
                     with ui.element("div").classes("camera-label"):
                         ui.element("span").classes("signal-dot")
                         self._label("camera_mode", "SIMULATED CAMERA")
-                    self._label("camera_time", "", "camera-stamp")
+                    with ui.element("div").classes("camera-indicators"):
+                        self.stabilization_marker = ui.button("STAB OFF · Z", on_click=self.toggle_stabilization).props('flat dense no-caps aria-label="Toggle camera stabilization" aria-pressed="false"').classes("stabilization-marker")
+                        self._label("camera_time", "", "camera-stamp")
                 ui.html(COMPASS, sanitize=False).classes("camera-compass")
                 self.crosshair = ui.html(RETICLE, sanitize=False).classes("crosshair")
+                self.horizon = ui.html("", sanitize=False).classes("artificial-horizon")
+                self.horizon.set_visibility(False)
+                with ui.element("div").classes("gimbal-tools") as self.gimbal_controls:
+                    with ui.element("div").classes("gimbal-buttons"):
+                        for icon, label, yaw, pitch, shortcut in (
+                            ("keyboard_arrow_left", "Pan camera left", -1, 0, "J"),
+                            ("keyboard_arrow_down", "Tilt camera down", 0, -1, "K"),
+                            ("keyboard_arrow_up", "Tilt camera up", 0, 1, "I"),
+                            ("keyboard_arrow_right", "Pan camera right", 1, 0, "L"),
+                        ):
+                            ui.button(icon=icon, on_click=lambda y=yaw, p=pitch: self.nudge_gimbal(yaw=y, pitch=p)).props(f'flat dense aria-label="{label}"').tooltip(f"{label} ({shortcut})")
+                        ui.button(icon="restart_alt", on_click=self.reset_gimbal).props('flat dense aria-label="Home camera gimbal"').tooltip("Home gimbal (R)")
+                    self._label("gimbal_angles", "PAN +0° / TILT +0°", "gimbal-readout")
+                self.thermal_note = ui.label("THERMAL STYLE / BRIGHTNESS ONLY").classes("camera-style-note")
+                self.thermal_note.set_visibility(False)
                 with ui.element("div").classes("camera-bottom"):
                     with ui.element("div").classes("camera-readings"):
                         for key, name in (("overlay_speed", "SPEED / M·S⁻¹"), ("overlay_heading", "HEADING / DEG"), ("overlay_pitch", "PITCH / DEG")):
                             with ui.element("div"):
                                 ui.label(name).classes("eyebrow")
                                 self._label(key, "—", "overlay-value")
-                    ui.label("CAM / 01").classes("eyebrow")
+                    self._label("camera_zoom", "1× · Q ZOOM", "eyebrow")
                 self.camera_empty = ui.label("Starting camera…").classes("camera-empty")
             with ui.element("div").classes("camera-footer"):
                 self._label("camera_status", "VIRTUAL TERRAIN / TEST SOURCE")
-                ui.label("FORWARD VIEW")
+                self._label("gimbal_hint", "I/K TILT · J/L PAN · R HOME")
+
+    def _tools_sidebar(self) -> None:
+        with ui.element("aside").classes("panel tools-sidebar").props('id="camera-tools" aria-label="Camera tools"'):
+            with ui.element("div").classes("panel-head"):
+                ui.label("CAMERA TOOLS").classes("panel-title")
+                self._label("filter_count", "0 ACTIVE", "small-meta")
+            with ui.element("div").classes("tools-scroll"):
+                with ui.element("div").classes("tool-section"):
+                    ui.label("STABILIZATION").classes("eyebrow")
+                    self.stabilization_button = ui.button("OFF · Z", on_click=self.toggle_stabilization).props('outline dense no-caps aria-label="Camera stabilization" aria-pressed="false"').classes("stabilization-toggle")
+                    self._label("stabilization_detail", "Follows rover", "subtext")
+                with ui.element("div").classes("tool-section"):
+                    self._camera_filter_controls()
+
+    def _camera_filter_controls(self) -> None:
+        with ui.element("div").classes("filter-controls").props('role="group" aria-label="Camera filter settings"'):
+            with ui.element("div").classes("filter-panel-heading"):
+                ui.label("FILTERS").classes("eyebrow")
+                with ui.element("div").classes("filter-panel-actions"):
+                    ui.button("Reset", on_click=self.reset_camera_filters).props('flat dense no-caps aria-label="Reset camera filters"')
+            self._label("filter_summary", "Original image", "filter-summary")
+            self.filter_switches = {}
+            for title, names in (("ENHANCEMENTS", ("denoise", "contrast", "sharpen", "invert")),
+                                 ("VISION EFFECTS", VISION_EFFECTS),
+                                 ("OVERLAYS", ("edges", "scanlines"))):
+                ui.label(title).classes("filter-group-title")
+                with ui.element("div").classes("filter-switch-grid"):
+                    for name in names:
+                        self.filter_switches[name] = ui.checkbox(FILTER_LABELS[name], value=False, on_change=self._camera_filter_changed).props("dense")
+                    if title == "OVERLAYS":
+                        self.filter_horizon = ui.checkbox("Horizon overlay", value=False, on_change=self._camera_filter_changed).props("dense")
+                if title == "VISION EFFECTS":
+                    with ui.element("div").classes("vision-mix-controls") as self.vision_controls:
+                        ui.label("Vision effect mix (%)").classes("filter-control-label")
+                        self.vision_strength = ui.slider(min=0, max=100, step=1, value=75, on_change=self._camera_filter_changed).props('dense label-always aria-label="Vision effect mix"')
+                    self.vision_controls.set_visibility(False)
+            with ui.element("div").classes("edge-filter-controls") as self.edge_controls:
+                ui.label("Edge sensitivity").classes("filter-control-label")
+                self.edge_sensitivity = ui.slider(min=0, max=100, step=1, value=50, on_change=self._camera_filter_changed).props('dense label-always aria-label="Edge sensitivity"')
+                ui.label("Overlay opacity (%)").classes("filter-control-label")
+                self.edge_opacity = ui.slider(min=0, max=100, step=1, value=65, on_change=self._camera_filter_changed).props('dense label-always aria-label="Edge overlay opacity"')
+            self.edge_controls.set_visibility(False)
+            ui.label("Combine any effects. Thermal colors represent image brightness.").classes("filter-note")
+
+    def _camera_filter_changed(self) -> None:
+        if self._resetting_filters:
+            return
+        self.edge_controls.set_visibility(self.filter_switches["edges"].value)
+        self.vision_controls.set_visibility(any(self.filter_switches[name].value for name in VISION_EFFECTS))
+        active = sum(bool(control.value) for control in self.filter_switches.values()) + bool(self.filter_horizon.value)
+        self._text("filter_count", f"{active} ACTIVE")
+        names = [FILTER_LABELS[name] for name, control in self.filter_switches.items() if control.value]
+        if self.filter_horizon.value:
+            names.append("Horizon overlay")
+        self._text("filter_summary", " · ".join(names) if names else "Original image")
+        self.thermal_note.set_visibility(self.filter_switches["thermal"].value and self.vision_strength.value > 0)
+        self._last_camera = -1
+        self.refresh()
+
+    def reset_camera_filters(self) -> None:
+        self._resetting_filters = True
+        try:
+            for control in self.filter_switches.values():
+                control.set_value(False)
+            self.filter_horizon.set_value(False)
+            self.edge_sensitivity.set_value(50)
+            self.edge_opacity.set_value(65)
+            self.vision_strength.set_value(75)
+        finally:
+            self._resetting_filters = False
+        self._camera_filter_changed()
 
     def _pose(self) -> None:
         with ui.element("section").classes("panel").props('id="attitude" aria-label="Robot attitude"'):
@@ -297,6 +414,43 @@ class Dashboard:
         self.reticle_visible = not self.reticle_visible
         self.crosshair.set_visibility(self.reticle_visible)
 
+    def cycle_camera_zoom(self) -> None:
+        self.camera_zoom_index = (self.camera_zoom_index + 1) % len(CAMERA_ZOOM_LEVELS)
+        zoom = CAMERA_ZOOM_LEVELS[self.camera_zoom_index]
+        self.camera_image.style(f"transform:scale({zoom})")
+        self._text("camera_zoom", f"{zoom}× · Q ZOOM")
+
+    @property
+    def gimbal_available(self) -> bool:
+        return hasattr(self.station.camera, "set_gimbal")
+
+    def _release_inputs(self) -> None:
+        self.station.drive.clear(self.client.id)
+        self.station.gimbal.release(self.client.id)
+
+    def _gimbal_event(self, event) -> None:
+        payload = event.args
+        if not self.gimbal_available or not isinstance(payload, dict):
+            return
+        if payload.get("release") is True:
+            self.station.gimbal.release(self.client.id)
+        else:
+            self.station.gimbal.set_input(self.client.id, payload.get("yaw", 0), payload.get("pitch", 0))
+
+    def nudge_gimbal(self, *, yaw: float = 0, pitch: float = 0) -> None:
+        if self.gimbal_available:
+            self.station.gimbal.nudge(yaw=yaw, pitch=pitch)
+            self.refresh()
+
+    def reset_gimbal(self) -> None:
+        if self.gimbal_available:
+            self.station.gimbal.reset()
+            self.refresh()
+
+    def toggle_stabilization(self) -> None:
+        self.station.toggle_stabilization()
+        self.refresh()
+
     def refresh(self) -> None:
         manager = self.station.telemetry
         state = manager.state
@@ -305,7 +459,22 @@ class Dashboard:
         simulated = isinstance(source, SimulatedTelemetrySource)
         paused = simulated and source.paused
         now = time.monotonic()
-        self.input_guard.props(f'data-mode="{self.station.drive.mode}" data-enabled="{str(self.station.virtual_driving).lower()}"')
+        self.input_guard.props(f'data-mode="{self.station.drive.mode}" data-enabled="{str(self.station.virtual_driving).lower()}" data-gimbal="{str(self.gimbal_available).lower()}"')
+        self.gimbal_controls.set_visibility(self.gimbal_available)
+        self._text("gimbal_hint", "I/K TILT · J/L PAN · R HOME" if self.gimbal_available else "FORWARD VIEW")
+        gimbal = self.station.gimbal.state
+        enabled = self.gimbal_available and self.station.gimbal.stabilized
+        limited = enabled and self.station.gimbal.limited
+        self.stabilization_marker.set_text("STAB ON · LIMIT" if limited else "STAB ON · Z" if enabled else "STAB OFF · Z")
+        self.stabilization_button.set_text("ON · Z" if enabled else "OFF · Z")
+        for control in (self.stabilization_marker, self.stabilization_button):
+            control.set_enabled(self.gimbal_available)
+            control.props(f'aria-pressed="{str(enabled).lower()}"')
+            control.classes(add="stabilization-on" if enabled else "stabilization-off", remove="stabilization-off" if enabled else "stabilization-on")
+        self._text("stabilization_detail", "Available with virtual camera" if not self.gimbal_available else
+                   "Compensation limit reached" if limited else "Direction locked · I/J/K/L to aim" if enabled else "Follows rover · Z to stabilize")
+        self._text("gimbal_angles", f"PAN {gimbal.yaw_deg:+.0f}° / TILT {gimbal.pitch_deg:+.0f}°")
+        self.rover.update_gimbal(gimbal)
         if self.drive_toggle.value != self.station.drive.mode:
             self.drive_toggle.set_value(self.station.drive.mode)
         self.drive_toggle.set_enabled(simulated and not paused)
@@ -329,8 +498,11 @@ class Dashboard:
             text = f"{value:+.1f}°" if value is not None and key != "heading" else f"{value:05.1f}°" if value is not None else "—"
             self._text(key, text)
         self._text("overlay_speed", f"{sample.speed_mps:.2f}" if sample else "—")
-        self._text("overlay_heading", f"{sample.heading_deg:05.1f}°" if sample else "—")
-        self._text("overlay_pitch", f"{sample.pitch_deg:+.1f}°" if sample else "—")
+        camera_attitude = self.station.virtual_rover.state if self.gimbal_available else sample
+        camera_heading = (camera_attitude.heading_deg + (gimbal.yaw_deg if self.gimbal_available else 0)) % 360 if sample else 0
+        camera_pitch = camera_attitude.pitch_deg + (gimbal.pitch_deg if self.gimbal_available else 0) if sample else 0
+        self._text("overlay_heading", f"{camera_heading:05.1f}°" if sample else "—")
+        self._text("overlay_pitch", f"{camera_pitch:+.1f}°" if sample else "—")
         self.battery_fill.style(f"width:{sample.battery_percent if sample else 0:.1f}%")
         wheels = sample.wheel_slip if sample else None
         rpms = sample.wheel_rpm if sample else None
@@ -361,9 +533,21 @@ class Dashboard:
         if not camera_fresh:
             self.camera_empty.set_text(camera.error or "Waiting for camera frames…")
         if frame and frame.sequence != self._last_camera:
-            self.camera_image.props(f'src="/api/camera/frame?sequence={frame.sequence}"')
+            query = urlencode({"sequence": frame.sequence,
+                               "sensitivity": int(self.edge_sensitivity.value), "opacity": int(self.edge_opacity.value),
+                               "vision_strength": int(self.vision_strength.value),
+                               **{name: str(control.value).lower() for name, control in self.filter_switches.items()}})
+            self.camera_image.props(f'src="/api/camera/frame?{query}"')
             self._last_camera = frame.sequence
             self._text("camera_resolution", f"{frame.width} × {frame.height}")
+        show_horizon = self.filter_horizon.value and sample is not None and camera_fresh
+        self.horizon.set_visibility(show_horizon)
+        if show_horizon:
+            roll = camera_attitude.roll_deg + (gimbal.roll_deg if self.gimbal_available else 0)
+            attitude = (round(camera_pitch, 1), round(roll, 1))
+            if attitude != self._last_horizon:
+                self.horizon.set_content(horizon_overlay(*attitude))
+                self._last_horizon = attitude
         self._text("camera_time", datetime.now().strftime("%H:%M:%S") if camera_fresh else "NO SIGNAL")
         self._text("camera_mode", "SIMULATED CAMERA" if camera.simulated else "USB CAMERA" if camera_fresh else "CAMERA OFFLINE")
         self._text("camera_status", f"{camera.name.upper()} / {camera.status.upper()}")
@@ -384,13 +568,24 @@ class Dashboard:
 def configure_dashboard(station: BaseStation, *, font_dir: str | None = None) -> None:
     """Register routes and a single global service timer before ui.run."""
     font_css, has_suisse = register_fonts(font_dir)
+    processor = CameraFrameProcessor()
 
     @app.get("/api/camera/frame")
-    def camera_frame():
+    def camera_frame(view: Literal["normal", "contrast", "edges"] = "normal",
+                     sensitivity: int = Query(50, ge=0, le=100), opacity: int = Query(65, ge=0, le=100),
+                     denoise: bool = False, sharpen: bool = False, contrast: bool = False, edges: bool = False,
+                     invert: bool = False, night_vision: bool = False, amber: bool = False,
+                     white_phosphor: bool = False, thermal: bool = False, scanlines: bool = False,
+                     vision_strength: int = Query(75, ge=0, le=100)):
         frame = station.camera.latest_frame()
         if frame is None or station.camera.error or time.monotonic() - frame.captured_at >= 2.0:
             return Response(status_code=503, headers={"Cache-Control": "no-store"})
-        return Response(frame.jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store", "X-Frame-Sequence": str(frame.sequence)})
+        settings = CameraFilterSettings(view=view, sensitivity=sensitivity, opacity=opacity, denoise=denoise,
+                                        sharpen=sharpen, contrast=contrast, edges=edges, invert=invert,
+                                        night_vision=night_vision, amber=amber, white_phosphor=white_phosphor,
+                                        thermal=thermal, scanlines=scanlines, vision_strength=vision_strength)
+        jpeg = processor.process(frame, settings)
+        return Response(jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store", "X-Frame-Sequence": str(frame.sequence)})
 
     @app.get("/healthz")
     def health():
@@ -399,6 +594,11 @@ def configure_dashboard(station: BaseStation, *, font_dir: str | None = None) ->
                 "source": state.source_name, "camera": station.camera.status,
                 "controller_connected": station.controller.state.connected,
                 "drive_mode": station.drive.mode, "speed_mps": station.virtual_rover.state.speed_mps,
+                "stabilization": station.gimbal.stabilized, "stabilization_limited": station.gimbal.limited,
+                "camera_heading_deg": (station.virtual_rover.state.heading_deg + station.gimbal.state.yaw_deg) % 360,
+                "rover_heading_deg": station.virtual_rover.state.heading_deg,
+                "camera_pitch_deg": station.virtual_rover.state.pitch_deg + station.gimbal.state.pitch_deg,
+                "camera_roll_deg": station.virtual_rover.state.roll_deg + station.gimbal.state.roll_deg,
                 "x_m": station.virtual_rover.state.x_m, "y_m": station.virtual_rover.state.y_m}
 
     @ui.page("/")

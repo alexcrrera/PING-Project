@@ -8,6 +8,7 @@ from typing import Protocol
 
 from .controller import ControllerState, PS4Controller
 from .drive import DriveCommand, DriveInputRouter
+from .gimbal import VirtualGimbal
 from .motion import VirtualRover
 from .telemetry import SimulatedTelemetrySource, TelemetryManager
 
@@ -106,6 +107,7 @@ class BaseStation:
         self.virtual_rover = virtual_rover or VirtualRover()
         self.drive = DriveInputRouter()
         self.drive_command = DriveCommand()
+        self.gimbal = VirtualGimbal()
         self.started_at = time.monotonic()
         self.started = False
         self._closed = False
@@ -134,6 +136,10 @@ class BaseStation:
         self.drive_command = DriveCommand(source=self.drive.mode)
         self.virtual_rover.stop()
 
+    def toggle_stabilization(self) -> None:
+        if hasattr(self.camera, "set_gimbal"):
+            self.gimbal.set_stabilized(not self.gimbal.stabilized)
+
     def replace_telemetry(self, source) -> None:
         self.stop_drive()
         self.telemetry.replace_source(source)
@@ -161,8 +167,15 @@ class BaseStation:
             self.drive_command = self.drive.command(self.controller.state, now=now) if self.virtual_driving else DriveCommand(source=self.drive.mode)
             self.virtual_rover.set_command(self.drive_command.throttle, self.drive_command.steering, self.drive_command.brake)
             motion = self.virtual_rover.advance(now)
-            if hasattr(self.camera, "set_motion"):
-                self.camera.set_motion(motion)
+            self.gimbal.update_attitude(motion.heading_deg, motion.pitch_deg, motion.roll_deg)
+            gimbal_pose = self.gimbal.advance(now)
+            if hasattr(self.camera, "set_view"):
+                self.camera.set_view(motion, gimbal_pose)
+            else:
+                if hasattr(self.camera, "set_motion"):
+                    self.camera.set_motion(motion)
+                if hasattr(self.camera, "set_gimbal"):
+                    self.camera.set_gimbal(gimbal_pose)
             self.telemetry.update()
 
     def close(self) -> None:
@@ -171,6 +184,7 @@ class BaseStation:
         self._closed = True
         self.started = False
         self.stop_drive()
+        self.gimbal.release()
         try:
             self.controller.close()
         finally:

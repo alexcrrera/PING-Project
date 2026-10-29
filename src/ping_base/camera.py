@@ -21,6 +21,8 @@ from typing import Any, Protocol
 
 from PIL import Image, ImageDraw
 
+from .gimbal import GimbalPose
+
 
 @dataclass(frozen=True, slots=True)
 class CameraFrame:
@@ -183,15 +185,12 @@ class SimulatedCameraSource(_LatestFrameSource):
         self._seed = seed
         self._motion_lock = threading.Lock()
         self._motion: _CameraPose | None = None
+        self._gimbal = GimbalPose()
         self._terrain_cache: OrderedDict[tuple[int, int], tuple[list, list]] = OrderedDict()
         self._panorama = self._make_panorama(random.Random(seed + 101))
 
-    def set_motion(self, motion: CameraMotion | None) -> None:
-        """Bind a pose without doing image work on the station's control thread.
-
-        Heading zero points along world +y; positive angles turn clockwise.
-        Passing ``None`` restores the independent ambient camera demonstration.
-        """
+    @staticmethod
+    def _copy_motion(motion: CameraMotion | None) -> _CameraPose | None:
         pose = None if motion is None else _CameraPose(
             float(motion.x_m), float(motion.y_m), float(motion.heading_deg),
             float(motion.pitch_deg), float(motion.roll_deg),
@@ -200,11 +199,34 @@ class SimulatedCameraSource(_LatestFrameSource):
                                        (pose.x_m, pose.y_m, pose.heading_deg,
                                         pose.pitch_deg, pose.roll_deg)):
             raise ValueError("Camera motion must contain finite pose values")
+        return pose
+
+    def set_motion(self, motion: CameraMotion | None) -> None:
+        """Copy rover pose; None restores the independent ambient demonstration."""
+        pose = self._copy_motion(motion)
         with self._motion_lock:
             self._motion = pose
 
     def _open(self) -> None:
         self._began = time.monotonic()
+
+    @staticmethod
+    def _copy_gimbal(pose: GimbalPose) -> GimbalPose:
+        if not all(math.isfinite(value) for value in (pose.yaw_deg, pose.pitch_deg, pose.roll_deg)):
+            raise ValueError("Gimbal angles must be finite")
+        return GimbalPose(pose.yaw_deg, pose.pitch_deg, pose.roll_deg)
+
+    def set_gimbal(self, pose: GimbalPose) -> None:
+        """Copy a mount orientation for the capture worker without moving the rover."""
+        pose = self._copy_gimbal(pose)
+        with self._motion_lock:
+            self._gimbal = pose
+
+    def set_view(self, motion: CameraMotion, gimbal: GimbalPose) -> None:
+        """Publish body and compensation together so capture cannot mix two ticks."""
+        pose, mount = self._copy_motion(motion), self._copy_gimbal(gimbal)
+        with self._motion_lock:
+            self._motion, self._gimbal = pose, mount
 
     def _make_background(self, rng: random.Random) -> Image.Image:
         image = Image.new("RGB", (self.width, self.height))
@@ -274,43 +296,60 @@ class SimulatedCameraSource(_LatestFrameSource):
         return rocks, pebbles
 
     @staticmethod
-    def _clip_near(points: list[tuple[float, float]], near: float = .75) -> list[tuple[float, float]]:
+    def _clip_near(points: list[tuple[float, ...]], near: float = .75) -> list[tuple[float, ...]]:
         """Clip a ground polygon before projection, including when facing away."""
         result = []
         previous = points[-1]
         for current in points:
             if (current[1] >= near) != (previous[1] >= near):
                 fraction = (near - previous[1]) / (current[1] - previous[1])
-                result.append((previous[0] + fraction * (current[0] - previous[0]), near))
+                result.append(tuple(a + fraction * (b - a) for a, b in zip(previous, current)))
             if current[1] >= near:
                 result.append(current)
             previous = current
         return result
 
-    def _render_motion(self, pose: _CameraPose) -> Image.Image:
+    def _render_motion(self, pose: _CameraPose, gimbal: GimbalPose) -> Image.Image:
         """Project a fixed local world through the moving rover-mounted camera."""
         w, h = self.width, self.height
-        offset = round((pose.heading_deg % 360) / 360 * w * 4)
-        image = self._panorama.crop((offset, 0, offset + w, h))
-        draw = ImageDraw.Draw(image)
         focal, horizon = w * .71, h * .405
-        angle = math.radians(pose.heading_deg)
+        pitch = math.radians(pose.pitch_deg + gimbal.pitch_deg)
+        cp, sp = math.cos(pitch), math.sin(pitch)
+        shift = round(focal * math.tan(pitch))
+        offset = round(((pose.heading_deg + gimbal.yaw_deg) % 360) / 360 * w * 4)
+        background = self._panorama.crop((offset, 0, offset + w, h))
+        image = Image.new("RGB", (w, h), (115, 117, 115) if shift >= 0 else (62, 64, 62))
+        image.paste(background, (0, shift))
+        draw = ImageDraw.Draw(image)
+        angle = math.radians(pose.heading_deg + gimbal.yaw_deg)
         cosine, sine = math.cos(angle), math.sin(angle)
 
         def local(x: float, y: float) -> tuple[float, float]:
             dx, dy = x - pose.x_m, y - pose.y_m
             return dx * cosine - dy * sine, dx * sine + dy * cosine
 
+        def camera_point(x: float, depth: float, z: float = 0) -> tuple[float, float, float]:
+            up = z - 1.12
+            return x, depth * cp + up * sp, up * cp - depth * sp
+
+        def screen(x: float, depth: float, up: float) -> tuple[float, float]:
+            depth = max(.05, depth)
+            return w * .5 + x * focal / depth, horizon - up * focal / depth
+
         def project(x: float, depth: float, z: float = 0) -> tuple[float, float]:
-            return w * .5 + x * focal / depth, horizon + (1.12 - z) * focal / depth
+            return screen(*camera_point(x, depth, z))
+
+        def visible(right: float, depth: float, margin: float = 0) -> bool:
+            camera_depth = camera_point(right, depth)[1]
+            return .75 < camera_depth and .75 < depth < 100 and abs(right) < camera_depth + margin
 
         # The lane and its markers are world fixtures: reverse retraces the
         # image, and steering naturally moves the lane out of the camera view.
         def ground_strip(x1: float, x2: float, color: tuple[int, int, int]) -> None:
-            points = self._clip_near([local(x, pose.y_m + y) for x, y in
+            points = self._clip_near([camera_point(*local(x, pose.y_m + y)) for x, y in
                                       ((x1, -140), (x2, -140), (x2, 140), (x1, 140))])
             if len(points) >= 3:
-                draw.polygon([project(*point) for point in points], fill=color)
+                draw.polygon([screen(*point) for point in points], fill=color)
 
         ground_strip(-1.8, 1.8, (85, 89, 83))
         for side in (-1, 1):
@@ -324,29 +363,60 @@ class SimulatedCameraSource(_LatestFrameSource):
                 rocks, pebbles = self._terrain_chunk(tile_x, tile_y)
                 for x, y, radius in pebbles:
                     right, depth = local(x, y)
-                    if .75 < depth < 100 and abs(right) < depth:
+                    if visible(right, depth):
                         px, py = project(right, depth)
                         r = max(.6, radius * focal / depth)
-                        if -r < px < w + r and horizon < py < h + r:
+                        if -r < px < w + r and -r < py < h + r:
                             draw.ellipse((px - r, py - r * .35, px + r, py + r * .45), fill=(64, 69, 63))
                 for x, y, size, variant in rocks:
                     right, depth = local(x, y)
-                    if .75 < depth < 100 and abs(right) < depth + size:
+                    if visible(right, depth, size):
                         objects.append((depth, "rock", (right, size, variant)))
         for index in range(math.floor((pose.y_m - 110) / 11), math.ceil((pose.y_m + 110) / 11)):
             right, depth = local(-2.45 if index % 2 else 2.45, index * 11)
-            if 1 < depth < 100 and abs(right) < depth:
+            if depth > 1 and visible(right, depth):
                 objects.append((depth, "marker", (right,)))
         self._draw_solids(draw, project, objects)
-        self._draw_fenders(draw)
-        return image
+        def chassis_polygon(points):
+            yaw = math.radians(gimbal.yaw_deg)
+            cy, sy = math.cos(yaw), math.sin(yaw)
+            body_pitch, body_roll = math.radians(pose.pitch_deg), math.radians(pose.roll_deg)
+            transformed = []
+            for px, py in points:
+                right, up = (px - w * .5) / focal, (horizon - py) / focal
+                right, up = (right * math.cos(body_roll) + up * math.sin(body_roll),
+                             -right * math.sin(body_roll) + up * math.cos(body_roll))
+                depth, up = (math.cos(body_pitch) - up * math.sin(body_pitch),
+                             math.sin(body_pitch) + up * math.cos(body_pitch))
+                transformed.append(camera_point(right * cy - depth * sy, right * sy + depth * cy, 1.12 + up))
+            return [screen(*point) for point in self._clip_near(transformed, near=.05)]
 
-    def _draw_fenders(self, draw: ImageDraw.ImageDraw) -> None:
+        self._draw_fenders(draw, transform=chassis_polygon)
+        return self._apply_roll(image, pose.roll_deg + gimbal.roll_deg)
+
+    @staticmethod
+    def _apply_roll(image: Image.Image, roll: float) -> Image.Image:
+        if abs(roll) < .001:
+            return image
+        w, h = image.size
+        angle = math.radians(roll)
+        c, s = abs(math.cos(angle)), abs(math.sin(angle))
+        scale = max((w * c + h * s) / w, (h * c + w * s) / h)
+        enlarged = image.resize((math.ceil(w * scale), math.ceil(h * scale)), Image.Resampling.BICUBIC)
+        rotated = enlarged.rotate(roll, resample=Image.Resampling.BICUBIC)
+        x, y = (rotated.width - w) // 2, (rotated.height - h) // 2
+        return rotated.crop((x, y, x + w, y + h))
+
+    def _draw_fenders(self, draw: ImageDraw.ImageDraw, *, transform=None) -> None:
         w, h = self.width, self.height
-        draw.polygon([(0, h), (0, h * .87), (w * .13, h * .93), (w * .20, h)], fill=(33, 38, 33))
-        draw.polygon([(w, h), (w, h * .87), (w * .87, h * .93), (w * .80, h)], fill=(33, 38, 33))
-        draw.line([(0, h * .87), (w * .13, h * .93), (w * .20, h)], fill=(112, 118, 109), width=2)
-        draw.line([(w, h * .87), (w * .87, h * .93), (w * .80, h)], fill=(112, 118, 109), width=2)
+        for points in (
+            [(0, h), (0, h * .87), (w * .13, h * .93), (w * .20, h)],
+            [(w, h), (w, h * .87), (w * .87, h * .93), (w * .80, h)],
+        ):
+            points = transform(points) if transform else points
+            if len(points) >= 3:
+                draw.polygon(points, fill=(33, 38, 33))
+                draw.line(points[1:], fill=(112, 118, 109), width=2)
 
     def _draw_solids(self, draw: ImageDraw.ImageDraw, project: Any,
                      objects: list[tuple[float, str, Any]]) -> None:
@@ -383,8 +453,9 @@ class SimulatedCameraSource(_LatestFrameSource):
         """Render a frame independently of the capture lifecycle (useful in previews)."""
         with self._motion_lock:
             pose = self._motion
-        if pose is not None:
-            return self._render_motion(pose)
+            gimbal = self._gimbal
+        if pose is not None or gimbal != GimbalPose():
+            return self._render_motion(pose or _CameraPose(0, elapsed * .34, 0, 0, 0), gimbal)
         image = self._background.copy()
         draw = ImageDraw.Draw(image)
         w, h = self.width, self.height

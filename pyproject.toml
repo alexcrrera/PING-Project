@@ -7,10 +7,10 @@ name = "ping-base"
 version = "0.2.0"
 description = "PING rover ground station with camera, attitude and replaceable telemetry"
 requires-python = ">=3.10"
-dependencies = ["nicegui==3.8.0", "pygame==2.6.1", "Pillow>=11.2,<13", "pyserial==3.5"]
+dependencies = ["nicegui==3.8.0", "pygame==2.6.1", "Pillow>=11.2,<13", "pyserial==3.5", "opencv-python>=4.11,<5", "numpy>=1.26,<3"]
 
 [project.optional-dependencies]
-camera = ["opencv-python>=4.11,<5"]
+camera = []
 
 [project.scripts]
 ping-base = "ping_base.cli:main"
