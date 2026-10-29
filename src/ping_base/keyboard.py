@@ -13,12 +13,13 @@ KEYBOARD_SCRIPT = r"""
     const editable = target => target?.closest?.('input,textarea,select,[role="slider"],[contenteditable="true"],.q-dialog,.q-menu,.filter-controls');
     const shortcutsEnabled = () => !document.hidden && document.hasFocus()
         && !document.body.classList.contains('q-body--dialog') && !editable(document.activeElement);
+    const mapOpen = () => document.getElementById('virtual-drive-input')?.dataset.mapOpen === 'true';
     const gimbalEnabled = () => shortcutsEnabled()
-        && document.getElementById('virtual-drive-input')?.dataset.gimbal === 'true';
+        && !mapOpen() && document.getElementById('virtual-drive-input')?.dataset.gimbal === 'true';
     const enabled = () => {
         const guard = document.getElementById('virtual-drive-input');
         return guard?.dataset.mode === 'keyboard' && guard?.dataset.enabled === 'true'
-            && shortcutsEnabled();
+            && !mapOpen() && shortcutsEnabled();
     };
     const emit = payload => { if (typeof emitEvent === 'function') emitEvent('virtual_drive', payload); };
     const emitCamera = (name, payload = {}) => { if (typeof emitEvent === 'function') emitEvent(name, payload); };
@@ -45,18 +46,27 @@ KEYBOARD_SCRIPT = r"""
         gimbalHeld = gimbalKeys.size > 0;
     };
     document.addEventListener('keydown', event => {
-        if (event.code === 'KeyQ' || event.code === 'KeyR' || event.code === 'KeyZ' || gimbalCodes.has(event.code)) {
+        if (event.code === 'Escape' && mapOpen()) {
             if (!shortcutsEnabled() || event.ctrlKey || event.altKey || event.metaKey || editable(event.target)) return;
-            if (event.code !== 'KeyQ' && !gimbalEnabled()) return;
+            event.preventDefault();
+            event.stopPropagation();
+            if (!event.repeat) emitCamera('map_close');
+            return;
+        }
+        if (event.code === 'KeyQ' || event.code === 'KeyM' || event.code === 'KeyR' || event.code === 'KeyZ' || gimbalCodes.has(event.code)) {
+            if (!shortcutsEnabled() || event.ctrlKey || event.altKey || event.metaKey || editable(event.target)) return;
+            if (event.code !== 'KeyQ' && event.code !== 'KeyM' && !gimbalEnabled()) return;
             event.preventDefault();
             event.stopPropagation();
             if (event.repeat) return;
             if (event.code === 'KeyQ') emitCamera('camera_zoom');
+            else if (event.code === 'KeyM') emitCamera('map_toggle');
             else if (event.code === 'KeyR') { clearGimbal(); emitCamera('camera_home'); }
             else if (event.code === 'KeyZ') emitCamera('camera_stabilization');
             else { gimbalKeys.add(event.code); sendGimbal(); }
             return;
         }
+        if (event.code === 'Space' && event.target?.closest?.('.map-mini, .map-zoom-controls')) { clear(); return; }
         if (!codes.has(event.code)) return;
         if (!enabled() || event.ctrlKey || event.altKey || event.metaKey || editable(event.target)) { clear(); return; }
         event.preventDefault();

@@ -14,28 +14,29 @@ from nicegui import app, context, ui
 
 from .fonts import register_fonts
 from .camera_filters import CameraFilterSettings, CameraFrameProcessor, FILTER_LABELS, VISION_EFFECTS
+from .gimbal import StabilizationMode
+from .hud import TACTICAL_RETICLE, heading_tape, range_readout
 from .keyboard import KEYBOARD_SCRIPT
+from .navigation import MAP_ZOOM_LEVELS, campus_map, simulated_position
+from .orientation import heading_indicator, pitch_indicator, roll_indicator
 from .rover import RoverView
 from .station import BaseStation
 from .telemetry import SerialTelemetrySource, SimulatedTelemetrySource
 from .theme import CSS
 
 
-RETICLE = '''<svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
-<path d="M32 3v17M32 44v17M3 32h17M44 32h17" stroke="#eeeee4" stroke-width="1"/>
-<circle cx="32" cy="32" r="2" stroke="#eeeee4" stroke-width="1"/>
-</svg>'''
-COMPASS = '''<svg viewBox="0 0 260 34" fill="none" aria-hidden="true">
-<path d="M0 12h260M0 12v7m26-7v5m26-5v5m26-5v5m26-5v7m26-7v9m26-9v7m26-7v5m26-5v5m26-5v5m26-5v7" stroke="#e2e4d6" stroke-width=".65"/>
-<path d="m127 4 3 4 3-4" stroke="#e2e4d6"/>
-<text x="130" y="33" fill="#e2e4d6" font-size="8" text-anchor="middle" font-family="Suisse,Arial" letter-spacing="2">HEADING</text>
-</svg>'''
 ICONS = {
     "camera": '<rect x="3" y="5" width="18" height="14" rx="1"/><circle cx="12" cy="12" r="4"/>',
     "rover": '<path d="m3 8 9-5 9 5v9l-9 5-9-5zM3 8l9 5 9-5M12 13v9"/>',
     "telemetry": '<path d="M3 13h4l3-8 4 15 3-9h4"/>',
 }
 CAMERA_ZOOM_LEVELS = (1, 2, 4)
+STABILIZATION_LABELS = {
+    StabilizationMode.OFF: ("OFF", "Follows rover tilt and turns"),
+    StabilizationMode.LOCK: ("LOCK", "Heading + pitch locked · Roll level"),
+    StabilizationMode.FOLLOW: ("FOLLOW", "Pitch locked · Roll level · Turns with rover"),
+}
+STABILIZATION_HINT = "Z: Off → Lock → Follow"
 
 
 def _icon(name: str) -> str:
@@ -85,6 +86,14 @@ class Dashboard:
         self.reticle_visible = True
         self._resetting_filters = False
         self._last_horizon: tuple[float, float] | None = None
+        self._last_orientation: tuple | None = None
+        self._last_heading: float | None = None
+        self._last_navigation: tuple | None = None
+        self._navigation_trail: list[tuple[float, float]] = []
+        self.map_expanded = False
+        self.map_zoom_index = MAP_ZOOM_LEVELS.index(1)
+        self.map_zoom_controls = []
+        self._map_toggle_sequence = station.map_toggle_sequence
         self.camera_zoom_index = 0
         ui.colors(primary="#d2d6b9", secondary="#999b91", accent="#d2d6b9")
         ui.add_css(font_css + "\n" + CSS)
@@ -96,6 +105,8 @@ class Dashboard:
         ui.on("camera_gimbal", self._gimbal_event)
         ui.on("camera_home", self.reset_gimbal)
         ui.on("camera_stabilization", self.toggle_stabilization)
+        ui.on("map_toggle", self.toggle_map)
+        ui.on("map_close", self.close_map)
         self.client.on_disconnect(self._release_inputs)
         ui.add_body_html(f"<script>{KEYBOARD_SCRIPT}</script>")
         self.refresh()
@@ -165,10 +176,13 @@ class Dashboard:
                         ui.element("span").classes("signal-dot")
                         self._label("camera_mode", "SIMULATED CAMERA")
                     with ui.element("div").classes("camera-indicators"):
-                        self.stabilization_marker = ui.button("STAB OFF · Z", on_click=self.toggle_stabilization).props('flat dense no-caps aria-label="Toggle camera stabilization" aria-pressed="false"').classes("stabilization-marker")
+                        self.stabilization_marker = ui.button("STAB OFF · Z", on_click=self.toggle_stabilization).props('flat dense no-caps aria-label="Cycle camera stabilization mode"').classes("stabilization-marker")
                         self._label("camera_time", "", "camera-stamp")
-                ui.html(COMPASS, sanitize=False).classes("camera-compass")
-                self.crosshair = ui.html(RETICLE, sanitize=False).classes("crosshair")
+                self.compass = ui.html(heading_tape(None), sanitize=False).classes("camera-compass")
+                self.crosshair = ui.html(TACTICAL_RETICLE, sanitize=False).classes("crosshair")
+                with ui.element("div").classes("rangefinder-overlay").props('role="status" aria-label="Camera center rangefinder"'):
+                    self._label("rangefinder_mode", "LRF / SIM · 10 M", "rangefinder-label")
+                    self._label("overlay_range", "---- m", "rangefinder-value")
                 self.horizon = ui.html("", sanitize=False).classes("artificial-horizon")
                 self.horizon.set_visibility(False)
                 with ui.element("div").classes("gimbal-tools") as self.gimbal_controls:
@@ -185,13 +199,16 @@ class Dashboard:
                 self.thermal_note = ui.label("THERMAL STYLE / BRIGHTNESS ONLY").classes("camera-style-note")
                 self.thermal_note.set_visibility(False)
                 with ui.element("div").classes("camera-bottom"):
-                    with ui.element("div").classes("camera-readings"):
-                        for key, name in (("overlay_speed", "SPEED / M·S⁻¹"), ("overlay_heading", "HEADING / DEG"), ("overlay_pitch", "PITCH / DEG")):
-                            with ui.element("div"):
-                                ui.label(name).classes("eyebrow")
-                                self._label(key, "—", "overlay-value")
+                    with ui.element("div").classes("camera-telemetry"):
+                        self._label("overlay_gps", "GPS —", "camera-gps")
+                        with ui.element("div").classes("camera-readings"):
+                            for key, name in (("overlay_speed", "SPEED / M·S⁻¹"), ("overlay_heading", "HEADING / DEG"), ("overlay_pitch", "PITCH / DEG")):
+                                with ui.element("div"):
+                                    ui.label(name).classes("eyebrow")
+                                    self._label(key, "—", "overlay-value")
                     self._label("camera_zoom", "1× · Q ZOOM", "eyebrow")
                 self.camera_empty = ui.label("Starting camera…").classes("camera-empty")
+                self._expanded_map()
             with ui.element("div").classes("camera-footer"):
                 self._label("camera_status", "VIRTUAL TERRAIN / TEST SOURCE")
                 self._label("gimbal_hint", "I/K TILT · J/L PAN · R HOME")
@@ -204,10 +221,51 @@ class Dashboard:
             with ui.element("div").classes("tools-scroll"):
                 with ui.element("div").classes("tool-section"):
                     ui.label("STABILIZATION").classes("eyebrow")
-                    self.stabilization_button = ui.button("OFF · Z", on_click=self.toggle_stabilization).props('outline dense no-caps aria-label="Camera stabilization" aria-pressed="false"').classes("stabilization-toggle")
-                    self._label("stabilization_detail", "Follows rover", "subtext")
+                    self.stabilization_button = ui.button("OFF · Z", on_click=self.toggle_stabilization).props('outline dense no-caps aria-label="Cycle camera stabilization mode"').classes("stabilization-toggle")
+                    self._label("stabilization_detail", "Follows rover tilt and turns", "subtext")
+                    ui.label(STABILIZATION_HINT).classes("subtext")
                 with ui.element("div").classes("tool-section"):
                     self._camera_filter_controls()
+            with ui.element("div").classes("navigation-panel"):
+                with ui.element("div").classes("navigation-head"):
+                    ui.label("JUSSIEU / LOCAL MAP").classes("eyebrow")
+                    ui.button("M", icon="open_in_full", on_click=self.toggle_map).props('flat dense no-caps aria-label="Expand map (M or DualShock touchpad)"')
+                with ui.element("div").classes("map-viewport map-mini-viewport") as mini_viewport:
+                    self.map_mini = ui.html(campus_map(None, None, None, None), sanitize=False).classes("map-mini").props('role="button" tabindex="0" aria-label="Open Jussieu map"').on("click", self.toggle_map).on("keydown.enter", self.toggle_map).on("keydown.space.prevent", self.toggle_map)
+                    self._map_zoom_buttons()
+                self._map_wheel_events(mini_viewport)
+                self._label("map_gps", "GPS —", "navigation-coordinates")
+                self._label("map_state", "SIMULATED GPS / WAITING", "navigation-state")
+
+    def _expanded_map(self) -> None:
+        # Keep the map under the fullscreen camera root so M works in fullscreen.
+        with ui.element("div").classes("map-overlay").props('role="dialog" aria-modal="true" aria-label="Jussieu navigation map"') as self.map_overlay:
+            with ui.element("section").classes("map-expanded-card"):
+                with ui.element("div").classes("map-expanded-head"):
+                    with ui.element("div"):
+                        ui.label("JUSSIEU / PARIS").classes("panel-title")
+                        ui.label("NORTH UP · SIMULATED GPS").classes("subtext")
+                    ui.button("M / ESC", icon="close", on_click=self.close_map).props('flat dense no-caps aria-label="Close map (M, Escape or DualShock touchpad)"')
+                with ui.element("div").classes("map-viewport map-large-viewport") as large_viewport:
+                    self.map_large = ui.html(campus_map(None, None, None, None), sanitize=False).classes("map-large")
+                    self._map_zoom_buttons()
+                self._map_wheel_events(large_viewport)
+                with ui.element("div").classes("map-expanded-footer"):
+                    self._label("map_large_gps", "GPS —", "navigation-coordinates")
+                    ui.label("WHITE · ROVER   AMBER · CAMERA").classes("subtext")
+                    ui.link("© OpenStreetMap contributors", "https://www.openstreetmap.org/copyright", new_tab=True).classes("subtext")
+        self.map_overlay.set_visibility(False)
+
+    def _map_zoom_buttons(self) -> None:
+        with ui.element("div").classes("map-zoom-controls").props('role="group" aria-label="Map zoom controls"'):
+            zoom_out = ui.button(icon="remove", on_click=lambda: self.zoom_map(-1)).props('flat dense aria-label="Zoom map out"')
+            reset = ui.button("1×", on_click=self.reset_map_zoom).props('flat dense no-caps aria-label="Reset map zoom to 1×"').tooltip("Reset map zoom")
+            zoom_in = ui.button(icon="add", on_click=lambda: self.zoom_map(1)).props('flat dense aria-label="Zoom map in"')
+        self.map_zoom_controls.append((zoom_out, reset, zoom_in))
+
+    def _map_wheel_events(self, viewport) -> None:
+        viewport.on("wheel", self._map_wheel, throttle=.12, trailing_events=False,
+                    js_handler="event => { if(event.ctrlKey || event.metaKey) return; event.preventDefault(); event.stopPropagation(); if(event.deltaY) emit({deltaY:event.deltaY}); }")
 
     def _camera_filter_controls(self) -> None:
         with ui.element("div").classes("filter-controls").props('role="group" aria-label="Camera filter settings"'):
@@ -277,11 +335,24 @@ class Dashboard:
             with ui.element("div").classes("pose-body"):
                 self.rover = RoverView(background_color="#191a18", height=240)
                 self.rover.scene.classes("rover-scene")
-                with ui.element("div").classes("pose-values"):
-                    for key, name in (("pitch", "PITCH"), ("roll", "ROLL"), ("heading", "HEADING")):
-                        with ui.element("div"):
+                with ui.element("div").classes("orientation-dials").props('role="group" aria-label="Vehicle pitch, roll and north-up heading"'):
+                    self.orientation_views = {}
+                    for key, name, caption, render in (
+                        ("pitch", "PITCH", "SIDE VIEW", pitch_indicator),
+                        ("roll", "ROLL", "FRONT VIEW", roll_indicator),
+                        ("heading", "NORTH UP · 0°", "", lambda _: heading_indicator(None, None)),
+                    ):
+                        with ui.element("div").classes("orientation-dial"):
                             ui.label(name).classes("eyebrow")
-                            self._label(key, "—", "pose-number")
+                            self.orientation_views[key] = ui.html(render(None), sanitize=False).classes("orientation-svg")
+                            self._label(key, "—", "orientation-value")
+                            if key == "heading":
+                                self._label("orientation_camera", "CAM —", "orientation-camera")
+                            else:
+                                ui.label(caption).classes("orientation-caption")
+                    with ui.element("div").classes("orientation-legend"):
+                        ui.label("WHITE · ROVER").classes("orientation-rover-key")
+                        ui.label("AMBER · CAMERA").classes("orientation-camera")
             with ui.element("div").classes("pose-foot"):
                 ui.label("Drag to orbit · Scroll to zoom")
                 self._label("pose_position", "X +0.0 m / Y +0.0 m")
@@ -451,6 +522,69 @@ class Dashboard:
         self.station.toggle_stabilization()
         self.refresh()
 
+    def _set_map_expanded(self, expanded: bool) -> None:
+        self.map_expanded = expanded
+        self.map_overlay.set_visibility(expanded)
+        if expanded:
+            self.map_large.set_content(self.map_mini.content)
+            self._release_inputs()
+
+    def toggle_map(self) -> None:
+        self._set_map_expanded(not self.map_expanded)
+        self.refresh()
+
+    def close_map(self) -> None:
+        self._set_map_expanded(False)
+        self.refresh()
+
+    def _set_map_zoom_index(self, index: int) -> None:
+        index = max(0, min(len(MAP_ZOOM_LEVELS) - 1, index))
+        if index == self.map_zoom_index:
+            return
+        self.map_zoom_index = index
+        for zoom_out, reset, zoom_in in self.map_zoom_controls:
+            zoom_out.set_enabled(index > 0)
+            zoom_in.set_enabled(index < len(MAP_ZOOM_LEVELS) - 1)
+            reset.set_text(f"{MAP_ZOOM_LEVELS[index]:g}×")
+        self.refresh()
+
+    def zoom_map(self, step: int) -> None:
+        self._set_map_zoom_index(self.map_zoom_index + step)
+
+    def reset_map_zoom(self) -> None:
+        self._set_map_zoom_index(MAP_ZOOM_LEVELS.index(1))
+
+    def _map_wheel(self, event) -> None:
+        delta = event.args.get("deltaY") if isinstance(event.args, dict) else None
+        if isinstance(delta, (int, float)) and not isinstance(delta, bool) and math.isfinite(delta) and delta:
+            self.zoom_map(1 if delta < 0 else -1)
+
+    def _refresh_navigation(self, motion, *, available: bool, simulated: bool,
+                            camera_heading: float | None) -> None:
+        position = simulated_position(motion.x_m, motion.y_m) if available else None
+        coordinates = (f"{abs(position.lat_deg):.6f}° {'N' if position.lat_deg >= 0 else 'S'}  "
+                       f"{abs(position.lon_deg):.6f}° {'E' if position.lon_deg >= 0 else 'W'}") if position else "GPS —"
+        self._text("overlay_gps", f"SIM GPS · {coordinates}" if position else "GPS —")
+        self._text("map_gps", coordinates)
+        self._text("map_large_gps", coordinates)
+        self._text("map_state", "SIMULATED GPS · M / TOUCHPAD EXPAND" if available else
+                   "SIMULATED GPS / NO FRESH FIX" if simulated else "GPS UNAVAILABLE / USB TELEMETRY")
+        if available:
+            point = (round(motion.x_m, 1), round(motion.y_m, 1))
+            if not self._navigation_trail or math.dist(point, self._navigation_trail[-1]) >= 1:
+                self._navigation_trail.append(point)
+                self._navigation_trail = self._navigation_trail[-300:]
+        values = (round(motion.x_m, 1), round(motion.y_m, 1), round(motion.heading_deg, 1),
+                  round(camera_heading, 1) if camera_heading is not None else None) if available else (None,) * 4
+        zoom = MAP_ZOOM_LEVELS[self.map_zoom_index]
+        navigation = (*values, zoom, tuple(self._navigation_trail))
+        if navigation != self._last_navigation:
+            content = campus_map(*values, trail=tuple(self._navigation_trail), zoom=zoom)
+            self.map_mini.set_content(content)
+            if self.map_expanded:
+                self.map_large.set_content(content)
+            self._last_navigation = navigation
+
     def refresh(self) -> None:
         manager = self.station.telemetry
         state = manager.state
@@ -459,20 +593,27 @@ class Dashboard:
         simulated = isinstance(source, SimulatedTelemetrySource)
         paused = simulated and source.paused
         now = time.monotonic()
-        self.input_guard.props(f'data-mode="{self.station.drive.mode}" data-enabled="{str(self.station.virtual_driving).lower()}" data-gimbal="{str(self.gimbal_available).lower()}"')
+        sequence = self.station.map_toggle_sequence
+        if sequence != self._map_toggle_sequence:
+            if (sequence - self._map_toggle_sequence) % 2:
+                self._set_map_expanded(not self.map_expanded)
+            self._map_toggle_sequence = sequence
+        self.input_guard.props(f'data-mode="{self.station.drive.mode}" data-enabled="{str(self.station.virtual_driving).lower()}" data-gimbal="{str(self.gimbal_available).lower()}" data-map-open="{str(self.map_expanded).lower()}"')
         self.gimbal_controls.set_visibility(self.gimbal_available)
         self._text("gimbal_hint", "I/K TILT · J/L PAN · R HOME" if self.gimbal_available else "FORWARD VIEW")
         gimbal = self.station.gimbal.state
-        enabled = self.gimbal_available and self.station.gimbal.stabilized
+        mode = self.station.gimbal.stabilization_mode if self.gimbal_available else StabilizationMode.OFF
+        label, detail = STABILIZATION_LABELS[mode]
+        enabled = mode is not StabilizationMode.OFF
         limited = enabled and self.station.gimbal.limited
-        self.stabilization_marker.set_text("STAB ON · LIMIT" if limited else "STAB ON · Z" if enabled else "STAB OFF · Z")
-        self.stabilization_button.set_text("ON · Z" if enabled else "OFF · Z")
+        self.stabilization_marker.set_text(f"STAB {label}" + (" · LIMIT" if limited else " · Z"))
+        self.stabilization_button.set_text(f"{label} · Z")
         for control in (self.stabilization_marker, self.stabilization_button):
             control.set_enabled(self.gimbal_available)
-            control.props(f'aria-pressed="{str(enabled).lower()}"')
+            control.props(f'aria-label="Camera stabilization: {label.title()}. Cycle mode (Z)" title="{detail}. {STABILIZATION_HINT}"')
             control.classes(add="stabilization-on" if enabled else "stabilization-off", remove="stabilization-off" if enabled else "stabilization-on")
         self._text("stabilization_detail", "Available with virtual camera" if not self.gimbal_available else
-                   "Compensation limit reached" if limited else "Direction locked · I/J/K/L to aim" if enabled else "Follows rover · Z to stabilize")
+                   detail + (" · Compensation limit reached" if limited else ""))
         self._text("gimbal_angles", f"PAN {gimbal.yaw_deg:+.0f}° / TILT {gimbal.pitch_deg:+.0f}°")
         self.rover.update_gimbal(gimbal)
         if self.drive_toggle.value != self.station.drive.mode:
@@ -493,16 +634,37 @@ class Dashboard:
                   "distance": ("distance_m", ".1f"), "rssi": ("signal_rssi_dbm", ".0f"), "latency": ("latency_ms", ".0f")}
         for key, (attr, fmt) in fields.items():
             self._text(key, format(getattr(sample, attr), fmt) if sample else "—")
+        motion = self.station.virtual_rover.state
+        vehicle_attitude = (motion if simulated else sample) if sample else None
         for key in ("pitch", "roll", "heading"):
-            value = getattr(sample, key + "_deg") if sample else None
-            text = f"{value:+.1f}°" if value is not None and key != "heading" else f"{value:05.1f}°" if value is not None else "—"
+            value = getattr(vehicle_attitude, key + "_deg") if vehicle_attitude else None
+            text = f"{value:+.1f}°" if value is not None and key != "heading" else f"{round(value, 1) % 360:05.1f}°" if value is not None else "—"
             self._text(key, text)
         self._text("overlay_speed", f"{sample.speed_mps:.2f}" if sample else "—")
         camera_attitude = self.station.virtual_rover.state if self.gimbal_available else sample
         camera_heading = (camera_attitude.heading_deg + (gimbal.yaw_deg if self.gimbal_available else 0)) % 360 if sample else 0
         camera_pitch = camera_attitude.pitch_deg + (gimbal.pitch_deg if self.gimbal_available else 0) if sample else 0
-        self._text("overlay_heading", f"{camera_heading:05.1f}°" if sample else "—")
+        self._text("overlay_heading", f"{round(camera_heading, 1) % 360:05.1f}°" if sample else "—")
         self._text("overlay_pitch", f"{camera_pitch:+.1f}°" if sample else "—")
+        heading = round(camera_heading, 1) % 360 if sample else None
+        if heading != self._last_heading:
+            self.compass.set_content(heading_tape(heading))
+            self._last_heading = heading
+        # A USB rover and the virtual camera have independent poses. Only show
+        # their bearings together when both belong to the shared simulation.
+        orientation_camera = camera_heading if sample and simulated and self.gimbal_available else None
+        orientation = tuple(round(getattr(vehicle_attitude, axis + "_deg"), 1) if vehicle_attitude else None
+                            for axis in ("pitch", "roll", "heading")) + (
+                                round(orientation_camera, 1) if orientation_camera is not None else None,)
+        if orientation != self._last_orientation:
+            pitch, roll, heading, bearing = orientation
+            self.orientation_views["pitch"].set_content(pitch_indicator(pitch))
+            self.orientation_views["roll"].set_content(roll_indicator(roll))
+            self.orientation_views["heading"].set_content(heading_indicator(heading, bearing))
+            self._last_orientation = orientation
+        self._text("orientation_camera", f"CAM {round(orientation_camera, 1) % 360:05.1f}°" if orientation_camera is not None else "CAM —")
+        self._refresh_navigation(motion, available=sample is not None and simulated,
+                                 simulated=simulated, camera_heading=orientation_camera)
         self.battery_fill.style(f"width:{sample.battery_percent if sample else 0:.1f}%")
         wheels = sample.wheel_slip if sample else None
         rpms = sample.wheel_rpm if sample else None
@@ -515,7 +677,6 @@ class Dashboard:
             if currents:
                 details += f" / {currents[i]:.2f} A"
             self.values[f"slip_{i}"].props(f'title="{escape(details)}"')
-        motion = self.station.virtual_rover.state
         if sample:
             self.rover.update(motion if simulated else sample)
         if simulated:
@@ -529,6 +690,8 @@ class Dashboard:
         camera = self.station.camera
         frame = camera.latest_frame()
         camera_fresh = frame is not None and not camera.error and now - frame.captured_at < 2.0
+        self._text("overlay_range", range_readout(getattr(frame, "range_m", None) if camera_fresh else None))
+        self._text("rangefinder_mode", "LRF / SIM · 10 M" if camera.simulated else "LRF · 10 M")
         self.camera_empty.set_visibility(not camera_fresh)
         if not camera_fresh:
             self.camera_empty.set_text(camera.error or "Waiting for camera frames…")
@@ -595,6 +758,7 @@ def configure_dashboard(station: BaseStation, *, font_dir: str | None = None) ->
                 "controller_connected": station.controller.state.connected,
                 "drive_mode": station.drive.mode, "speed_mps": station.virtual_rover.state.speed_mps,
                 "stabilization": station.gimbal.stabilized, "stabilization_limited": station.gimbal.limited,
+                "stabilization_mode": station.gimbal.stabilization_mode.value,
                 "camera_heading_deg": (station.virtual_rover.state.heading_deg + station.gimbal.state.yaw_deg) % 360,
                 "rover_heading_deg": station.virtual_rover.state.heading_deg,
                 "camera_pitch_deg": station.virtual_rover.state.pitch_deg + station.gimbal.state.pitch_deg,

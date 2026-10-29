@@ -2,7 +2,7 @@
 
 import unittest
 
-from ping_base.gimbal import GimbalPose, VirtualGimbal
+from ping_base.gimbal import GimbalPose, StabilizationMode, VirtualGimbal
 
 
 class GimbalTests(unittest.TestCase):
@@ -99,6 +99,125 @@ class GimbalTests(unittest.TestCase):
         self.gimbal.update_attitude(0, 10, 5)
         self.assertFalse(self.gimbal.limited)
         self.assertEqual(self.gimbal.state, GimbalPose(0, -10, -5))
+
+    def test_cycle_visits_lock_follow_and_off_once_each(self):
+        self.assertEqual(self.gimbal.stabilization_mode, StabilizationMode.OFF)
+        self.assertFalse(self.gimbal.stabilized)
+        for mode in (StabilizationMode.LOCK, StabilizationMode.FOLLOW, StabilizationMode.OFF):
+            self.assertEqual(self.gimbal.cycle_stabilization(), mode)
+            self.assertEqual(self.gimbal.stabilization_mode, mode)
+            self.assertEqual(self.gimbal.stabilized, mode is not StabilizationMode.OFF)
+
+    def test_follow_holds_pitch_and_levels_roll_while_turning_with_rover(self):
+        self.gimbal.update_attitude(350, 3, 4)
+        self.gimbal.nudge(yaw=20, pitch=7)
+        self.gimbal.set_stabilization_mode("follow")
+        self.gimbal.update_attitude(15, -4, 9)
+        pose = self.gimbal.state
+        self.assertEqual(pose.yaw_deg, 20)
+        self.assertAlmostEqual((15 + pose.yaw_deg) % 360, 35)
+        self.assertAlmostEqual(-4 + pose.pitch_deg, 10)
+        self.assertAlmostEqual(9 + pose.roll_deg, 0)
+        self.assertFalse(self.gimbal.limited)
+
+    def test_follow_manual_aim_holds_new_pitch_and_relative_pan(self):
+        self.gimbal.update_attitude(350, 4, 2)
+        self.gimbal.set_stabilization_mode(StabilizationMode.FOLLOW)
+        self.gimbal.update_attitude(5, -2, 5)
+        self.gimbal.nudge(yaw=8, pitch=3)
+        self.gimbal.update_attitude(25, 1, -4)
+        self.assertEqual(self.gimbal.state, GimbalPose(8, 6, 4))
+        self.gimbal.set_input("page-a", 1, -1, now=0)
+        self.gimbal.advance(.1)
+        self.assertEqual(self.gimbal.state, GimbalPose(9.5, 4.5, 4))
+        self.gimbal.release("page-a", now=.1)
+        self.gimbal.update_attitude(100, -3, 7)
+        self.assertEqual(self.gimbal.state, GimbalPose(9.5, 8.5, -7))
+
+    def test_mode_changes_capture_current_aim_without_pan_or_tilt_jumps(self):
+        self.gimbal.update_attitude(350, 4, 7)
+        self.gimbal.nudge(yaw=25, pitch=8)
+        for mode in (StabilizationMode.LOCK, StabilizationMode.FOLLOW, StabilizationMode.LOCK,
+                     StabilizationMode.OFF, StabilizationMode.FOLLOW):
+            with self.subTest(mode=mode):
+                before = self.gimbal.state
+                self.gimbal.set_stabilization_mode(mode)
+                self.assertEqual(self.gimbal.state.yaw_deg, before.yaw_deg)
+                self.assertEqual(self.gimbal.state.pitch_deg, before.pitch_deg)
+                self.gimbal.update_attitude(10, -1, -4)
+        self.assertEqual(self.gimbal.state.roll_deg, 4)
+
+    def test_follow_to_lock_captures_heading_after_a_vehicle_turn(self):
+        self.gimbal.nudge(yaw=10, pitch=5)
+        self.gimbal.set_stabilization_mode(StabilizationMode.FOLLOW)
+        self.gimbal.update_attitude(90, -2, 3)
+        self.gimbal.set_stabilization_mode(StabilizationMode.LOCK)
+        self.gimbal.update_attitude(110, 2, 5)
+        self.assertEqual(self.gimbal.state, GimbalPose(-10, 3, -5))
+        self.assertAlmostEqual(110 + self.gimbal.state.yaw_deg, 100)
+
+    def test_home_retains_follow_mode_and_clears_held_input(self):
+        self.gimbal.set_stabilization_mode(StabilizationMode.FOLLOW)
+        self.gimbal.set_input("page-a", 1, 1, now=0)
+        self.gimbal.update_attitude(80, 5, 7)
+        self.gimbal.reset()
+        self.gimbal.advance(.1)
+        self.gimbal.advance(.2)
+        self.assertEqual(self.gimbal.stabilization_mode, StabilizationMode.FOLLOW)
+        self.assertEqual(self.gimbal.state, GimbalPose(0, 0, -7))
+        self.gimbal.update_attitude(120, -3, 4)
+        self.assertEqual(self.gimbal.state, GimbalPose(0, 8, -4))
+
+    def test_both_stabilized_modes_recover_pitch_target_after_pan_at_limit(self):
+        for mode in (StabilizationMode.LOCK, StabilizationMode.FOLLOW):
+            with self.subTest(mode=mode):
+                gimbal = VirtualGimbal()
+                gimbal.set_stabilization_mode(mode)
+                gimbal.update_attitude(0, 80, 60)
+                self.assertTrue(gimbal.limited)
+                self.assertEqual(gimbal.state, GimbalPose(0, -60, -45))
+                gimbal.nudge(yaw=5)
+                gimbal.update_attitude(0, 10, 5)
+                self.assertFalse(gimbal.limited)
+                self.assertEqual(gimbal.state, GimbalPose(5, -10, -5))
+
+    def test_disabling_follow_restores_unstabilized_body_follow(self):
+        self.gimbal.set_stabilization_mode(StabilizationMode.FOLLOW)
+        self.gimbal.update_attitude(50, 80, 60)
+        self.gimbal.set_stabilized(False)
+        before = self.gimbal.state
+        self.assertEqual(before, GimbalPose(0, -60, 0))
+        self.assertFalse(self.gimbal.limited)
+        self.gimbal.update_attitude(90, -10, 12)
+        self.assertEqual(self.gimbal.state, before)
+
+    def test_boolean_api_and_invalid_mode_do_not_corrupt_selection(self):
+        self.gimbal.set_stabilization_mode(StabilizationMode.FOLLOW)
+        self.gimbal.set_stabilized(True)
+        self.assertEqual(self.gimbal.stabilization_mode, StabilizationMode.LOCK)
+        for invalid in (None, True, 1, "invalid"):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                self.gimbal.set_stabilization_mode(invalid)
+            self.assertEqual(self.gimbal.stabilization_mode, StabilizationMode.LOCK)
+
+    def test_switching_at_pitch_limit_captures_actual_view(self):
+        self.gimbal.set_stabilization_mode(StabilizationMode.LOCK)
+        self.gimbal.update_attitude(20, 80, 0)
+        self.assertEqual(self.gimbal.state, GimbalPose(-20, -60, 0))
+        self.gimbal.set_stabilization_mode(StabilizationMode.FOLLOW)
+        self.assertEqual(self.gimbal.state, GimbalPose(-20, -60, 0))
+        self.gimbal.update_attitude(50, 10, 0)
+        self.assertEqual(self.gimbal.state, GimbalPose(-20, 10, 0))
+
+    def test_reselecting_active_mode_does_not_replace_locked_pitch_at_limit(self):
+        for mode in (StabilizationMode.LOCK, StabilizationMode.FOLLOW):
+            with self.subTest(mode=mode):
+                gimbal = VirtualGimbal()
+                gimbal.set_stabilization_mode(mode)
+                gimbal.update_attitude(0, 80, 0)
+                gimbal.set_stabilization_mode(mode)
+                gimbal.update_attitude(0, 10, 0)
+                self.assertEqual(gimbal.state.pitch_deg, -10)
 
 
 if __name__ == "__main__":

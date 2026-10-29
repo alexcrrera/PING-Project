@@ -11,7 +11,7 @@ from unittest.mock import Mock
 from PIL import Image
 
 from ping_base.camera import OpenCVCameraSource, SimulatedCameraSource, _LatestFrameSource
-from ping_base.gimbal import GimbalPose
+from ping_base.gimbal import GimbalPose, StabilizationMode, VirtualGimbal
 
 
 def wait_until(predicate, timeout=2):
@@ -105,6 +105,33 @@ class CameraTests(unittest.TestCase):
             self.assertNotEqual(home, source.render(0).tobytes())
             source.set_view(body, GimbalPose(-35, -8, -12))
             self.assertEqual(home, source.render(0).tobytes())
+
+    def test_direction_lock_keeps_rendered_aim_during_rover_turn_and_tilt(self):
+        source = SimulatedCameraSource(width=320, height=180)
+        gimbal = VirtualGimbal()
+        gimbal.nudge(yaw=20, pitch=6)
+        gimbal.set_stabilization_mode(StabilizationMode.LOCK)
+        with unittest.mock.patch.object(source, "_draw_fenders"):
+            source.set_view(self.motion(), gimbal.state)
+            original = source.render(0).tobytes()
+            gimbal.update_attitude(70, 11, 9)
+            source.set_view(self.motion(heading_deg=70, pitch_deg=11, roll_deg=9), gimbal.state)
+            self.assertEqual(original, source.render(0).tobytes())
+
+    def test_follow_mode_turns_rendered_view_but_keeps_pitch_and_horizon(self):
+        source = SimulatedCameraSource(width=320, height=180)
+        gimbal = VirtualGimbal()
+        gimbal.nudge(yaw=20, pitch=6)
+        gimbal.set_stabilization_mode(StabilizationMode.FOLLOW)
+        with unittest.mock.patch.object(source, "_draw_fenders"):
+            source.set_view(self.motion(), gimbal.state)
+            original = source.render(0).tobytes()
+            gimbal.update_attitude(70, 11, 9)
+            source.set_view(self.motion(heading_deg=70, pitch_deg=11, roll_deg=9), gimbal.state)
+            followed = source.render(0).tobytes()
+            self.assertNotEqual(original, followed)
+            source.set_view(self.motion(heading_deg=70), GimbalPose(20, 6))
+            self.assertEqual(followed, source.render(0).tobytes())
 
     def test_roll_keeps_frame_dimensions_and_atomic_view_copies_inputs(self):
         source = SimulatedCameraSource(width=320, height=180)

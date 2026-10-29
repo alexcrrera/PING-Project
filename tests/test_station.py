@@ -7,7 +7,8 @@ import unittest
 from unittest.mock import patch
 
 from ping_base.cli import main
-from ping_base.controller import ControllerState
+from ping_base.controller import Button, ControllerState, PS4Controller, RawInput
+from ping_base.gimbal import StabilizationMode
 from ping_base.station import BaseStation, NoController, PS4ControllerService
 
 
@@ -82,6 +83,79 @@ class StationTests(unittest.TestCase):
         self.assertFalse(state.connected)
         self.assertFalse(any(value.held for value in state.buttons.values()))
         self.assertIn("disabled", station.controller.status.lower())
+        station.close()
+
+    def test_stabilization_cycles_all_modes_for_a_gimbal_camera(self):
+        station = self.make_station()
+        self.camera.set_gimbal = lambda pose: None
+        self.assertEqual(station.gimbal.stabilization_mode, StabilizationMode.OFF)
+        for expected in (StabilizationMode.LOCK, StabilizationMode.FOLLOW,
+                         StabilizationMode.OFF, StabilizationMode.LOCK):
+            station.toggle_stabilization()
+            self.assertEqual(station.gimbal.stabilization_mode, expected)
+            self.assertEqual(station.gimbal.stabilized, expected != StabilizationMode.OFF)
+
+    def test_stabilization_is_unavailable_without_a_camera_gimbal(self):
+        station = self.make_station()
+        for _ in range(4):
+            station.toggle_stabilization()
+            self.assertEqual(station.gimbal.stabilization_mode, StabilizationMode.OFF)
+
+    def test_dualshock_touchpad_advances_map_sequence_once_per_press(self):
+        station = self.make_station()
+        model = PS4Controller()
+        station.set_drive_mode("dualshock")
+        station.start()
+
+        def tick(held=False, *, connected=True):
+            self.controller.state = model.update(RawInput(
+                connected=connected, device_id="pad",
+                held=frozenset({Button.TOUCHPAD}) if held else frozenset(),
+                touchpad_available=True,
+            ))
+            station.tick()
+
+        self.assertEqual(station.map_toggle_sequence, 0)
+        tick(True)  # Attaching with the pad already held seeds its state.
+        self.assertEqual(station.map_toggle_sequence, 0)
+        tick(False)
+        tick(True)
+        self.assertEqual(station.map_toggle_sequence, 1)
+        station.tick()  # Re-reading an immutable snapshot cannot replay its edge.
+        self.assertEqual(station.map_toggle_sequence, 1)
+        tick(True)
+        tick(True)
+        self.assertEqual(station.map_toggle_sequence, 1)
+        tick(False)
+        tick(True)
+        self.assertEqual(station.map_toggle_sequence, 2)
+        tick(connected=False)
+        tick(True)  # Reconnection with the pad held is still not a press.
+        self.assertEqual(station.map_toggle_sequence, 2)
+        station.close()
+
+    def test_map_touchpad_requires_selected_dualshock_mode_not_virtual_driving(self):
+        station = self.make_station()
+        model = PS4Controller()
+        station.start()
+        self.controller.state = model.update(RawInput(connected=True, device_id="pad"))
+        station.tick()
+        self.controller.state = model.update(RawInput(
+            connected=True, device_id="pad", held=frozenset({Button.TOUCHPAD}),
+        ))
+        station.tick()
+        self.assertEqual(station.map_toggle_sequence, 0)
+        station.set_drive_mode("dualshock")
+        station.tick()  # Switching modes cannot replay the previous keyboard-mode edge.
+        self.assertEqual(station.map_toggle_sequence, 0)
+        self.controller.state = model.update(RawInput(connected=True, device_id="pad"))
+        station.tick()
+        self.controller.state = model.update(RawInput(
+            connected=True, device_id="pad", held=frozenset({Button.TOUCHPAD}),
+        ))
+        station.tick()
+        self.assertFalse(station.virtual_driving)  # USB/fake telemetry must not disable map access.
+        self.assertEqual(station.map_toggle_sequence, 1)
         station.close()
 
     def test_partial_startup_failure_releases_every_service(self):

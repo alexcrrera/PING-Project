@@ -20,4 +20,4 @@ ping-controller = "ping_base.app:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-ping_base = ["telemetry/PROTOCOL.md"]
+ping_base = ["telemetry/PROTOCOL.md", "assets/*.json"]

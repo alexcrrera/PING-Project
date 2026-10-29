@@ -38,9 +38,9 @@ Helvetica/Arial is the fallback when Suisse is unavailable.
 The desktop dashboard fits the available viewport (including 1366 × 768 and
 1920 × 1080) with a flatter header and camera/model panels that share the
 remaining height. Matching left/right columns hold camera tools and telemetry.
-The left column scrolls independently and groups the filters with their active
-count and summary; additional tools can be added as further sections. Narrow
-screens stack these panels below the camera, with scrolling so controls remain accessible.
+The left column scrolls independently above a square local navigation map and
+groups the filters with their active count and summary. Narrow screens stack
+these panels below the camera, with scrolling so controls remain accessible.
 
 - Select **Keyboard** under **Virtual drive**. Hold **W/S** or **Up/Down** for
   forward/reverse; **A/D** or **Left/Right** steer, including turning in place.
@@ -62,7 +62,38 @@ screens stack these panels below the camera, with scrolling so controls remain a
   scans available ports, and selects a baud rate. Switching closes the previous
   receiver and clears its state/history. Camera and telemetry are independent:
   USB telemetry can be inspected with the virtual camera.
-- The camera toolbar toggles the crosshair and opens fullscreen video.
+- The camera toolbar toggles the tactical reticle and opens fullscreen video.
+  The reticle uses a clear center point, segmented brackets and reference ticks;
+  outlined strokes and dark instrument backplates keep the overlay readable
+  against bright or detailed terrain. The heading tape above the video scrolls
+  with the **camera's viewing direction**, including gimbal pan and stabilization,
+  and shows cardinal bearings plus a centered numeric heading.
+- A **10 m simulated rangefinder** measures the world surface under the center
+  of the camera reticle, including ground, rocks and marker posts. Its **LRF**
+  readout appears directly below the crosshair and follows camera pan/tilt and
+  rover movement. Returns up to **10.00 m** show the distance; beyond that range,
+  no hit, stale video or unavailable sensor data shows **`---- m`**. The reading
+  belongs to the displayed camera frame and stays centered at every zoom level.
+  Physical rangefinder input has not yet been connected.
+- Simulated **GPS coordinates** appear on the video and beside the navigation
+  map. The virtual rover starts around **48.845864° N, 2.356737° E**, using
+  [Sorbonne's published Jussieu campus location](https://guideetudiant.sorbonne-universite.fr/vos-campus).
+  Local east/north motion updates the coordinates and map marker together.
+  GPS is currently simulated; the physical telemetry protocol has no GPS fields.
+- The square **Jussieu / local map** remains north-up, with a white rover,
+  an independent amber camera direction and a recent travel trail. Buildings,
+  streets and paths use a bundled local [OpenStreetMap](https://www.openstreetmap.org/copyright)
+  extract, so the map works offline. The map pans as the rover travels; outside
+  the cached campus area it keeps the actual position and labels the coverage
+  limit. Stale telemetry or unavailable GPS clears the live marker/readouts.
+- Use the map's **− / +** buttons or scroll over either map to zoom from
+  **0.5× to 8×**. Click the zoom value to reset to **1×**. The mini and expanded
+  views share the same zoom, with an accurate scale bar and north kept up.
+- Press **M**, click the map, or press the DualShock **touchpad button** while
+  **DualShock** mode is selected to expand the map. **M** or the touchpad toggles
+  it closed again; **Escape** and the close button also close it. Map controls
+  remain available in fullscreen video. Holding M toggles only once, and
+  typing in fields or using connection dialogs does not toggle the map.
 - Use **Filters** in the left **Camera tools** column. Every effect is an
   independent checkbox: stack **Enhanced contrast** (local CLAHE), **Edge
   overlay** (yellow Canny outlines), **Noise reduction**, **Sharpen details**,
@@ -90,16 +121,26 @@ screens stack these panels below the camera, with scrolling so controls remain a
   keeping the selected zoom. Releasing the keys holds the current angle; loss
   of focus or connection stops movement. Gimbal controls are available for the
   virtual camera, including fullscreen, and work in either drive mode.
-- Press **Z** to toggle virtual-camera stabilization, or click either stabilization
-  button. The camera shows **STAB ON / OFF**, and the left column shows the same
-  state. Stabilization holds camera heading and pitch while leveling roll as the
-  rover turns or tilts. I/J/K/L still aim the camera, and **R** returns it forward
-  while retaining the stabilization setting. **LIMIT** appears if the mount
-  reaches its pitch/roll compensation limits. The marker and Z remain available
-  in fullscreen. Holding Z toggles once; typing in fields does not toggle it.
+- Press **Z** to cycle virtual-camera stabilization through **OFF → LOCK → FOLLOW
+  → OFF**, or click either stabilization button. The camera marker and left
+  column both show the current mode. **LOCK** holds world heading and pitch while
+  leveling roll as the rover turns or tilts. **FOLLOW** holds pitch and levels
+  roll while turning with the rover, keeping your selected pan offset. **OFF**
+  follows all rover motion without compensation. I/J/K/L still aim the camera,
+  and **R** returns it forward while retaining the selected mode and zoom.
+  **LIMIT** appears if the mount reaches its pitch/roll compensation limits.
+  The marker and Z remain available in fullscreen. Holding Z advances once;
+  typing in fields does not change the mode.
 - Drag the 3D rover to orbit, scroll to zoom, and use its reset button to restore
   the view. Pitch, roll and heading follow telemetry. The model is an illustrative
   four-wheel chassis with suspension and a stereo camera mast, not final CAD.
+- The attitude panel also has three compact orientation views: a side view for
+  **pitch**, a front view for **roll**, and a **north-up heading** view. North is
+  always up at **0°**, east is right at **90°**, and headings increase clockwise.
+  The white rover shows vehicle heading; the amber camera marker shows its
+  viewing direction independently as you pan or change stabilization modes.
+  Camera direction is shown when it shares the virtual rover's orientation
+  model; unavailable direction or stale telemetry is marked as missing.
 - Hover over wheel slip values for wheel RPM and motor current when available.
   Wheel order is **FL / FR / RL / RR**. Missing optional channels show `—`.
 

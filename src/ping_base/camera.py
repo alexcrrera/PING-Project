@@ -31,6 +31,69 @@ class CameraFrame:
     captured_at: float
     width: int
     height: int
+    range_m: float | None = None
+
+
+RANGEFINDER_MAX_M = 10.0
+CameraCapture = tuple[bytes, int, int, float] | tuple[bytes, int, int, float, float | None]
+
+
+@dataclass(slots=True)
+class _CenterRange:
+    """Probe drawn world surfaces at the final image's center, in paint order.
+
+    The terrain is a ground plane; rocks/signs are the renderer's depth-plane
+    billboards. Image roll and its centered overscan retain the center pixel.
+    """
+
+    x: float
+    y: float
+    slant_per_depth: float
+    distance_m: float | None
+
+    @classmethod
+    def for_camera(cls, width: int, height: int, pitch_deg: float = 0) -> _CenterRange:
+        # The renderer's principal horizon is above the image center. Use the
+        # actual crosshair ray rather than assuming that level pitch sees sky.
+        q = (height * .405 - height * .5) / (width * .71)
+        pitch = math.radians(pitch_deg)
+        cp, sp = math.cos(pitch), math.sin(pitch)
+        forward, up = cp - q * sp, sp + q * cp
+        length = math.hypot(1, q)
+        ground = -1.12 * length / up if up < -1e-12 else None
+        return cls(width * .5, height * .5, length / forward if forward > 0 else 0, ground)
+
+    def polygon(self, points: list[tuple[float, float]], depth: float) -> None:
+        if self.slant_per_depth <= 0 or len(points) < 3:
+            return
+        inside = False
+        previous = points[-1]
+        for current in points:
+            ax, ay = previous
+            bx, by = current
+            # A center exactly on a silhouette edge still receives a return.
+            cross = (self.x - ax) * (by - ay) - (self.y - ay) * (bx - ax)
+            if (abs(cross) < 1e-8 and min(ax, bx) <= self.x <= max(ax, bx)
+                    and min(ay, by) <= self.y <= max(ay, by)):
+                inside = True
+                break
+            if (ay > self.y) != (by > self.y):
+                edge_x = ax + (self.y - ay) * (bx - ax) / (by - ay)
+                if self.x < edge_x:
+                    inside = not inside
+            previous = current
+        if inside:
+            self.distance_m = depth * self.slant_per_depth
+
+    @property
+    def reading(self) -> float | None:
+        value = self.distance_m
+        if value is None or not math.isfinite(value) or value < 0:
+            return None
+        if value <= RANGEFINDER_MAX_M:
+            return value
+        # Avoid losing an exactly 10 m intersection to floating point noise.
+        return RANGEFINDER_MAX_M if math.isclose(value, RANGEFINDER_MAX_M, abs_tol=1e-10, rel_tol=0) else None
 
 
 class CameraSource(Protocol):
@@ -139,10 +202,11 @@ class _LatestFrameSource(ABC):
                 try:
                     result = self._capture_frame(began)
                     if result is not None:
-                        jpeg, width, height, captured_at = result
+                        jpeg, width, height, captured_at = result[:4]
+                        range_m = result[4] if len(result) == 5 else None
                         sequence += 1
                         with self._lock:
-                            self._frame = CameraFrame(jpeg, sequence, captured_at, width, height)
+                            self._frame = CameraFrame(jpeg, sequence, captured_at, width, height, range_m)
                             self._status = "Simulation" if self.simulated else "Connected"
                 except Exception as exc:
                     self._fail(exc)
@@ -158,7 +222,7 @@ class _LatestFrameSource(ABC):
         pass
 
     @abstractmethod
-    def _capture_frame(self, now: float) -> tuple[bytes, int, int, float] | None:
+    def _capture_frame(self, now: float) -> CameraCapture | None:
         """Return one frame; adapters must keep this operation bounded."""
 
 
@@ -309,11 +373,12 @@ class SimulatedCameraSource(_LatestFrameSource):
             previous = current
         return result
 
-    def _render_motion(self, pose: _CameraPose, gimbal: GimbalPose) -> Image.Image:
+    def _render_motion(self, pose: _CameraPose, gimbal: GimbalPose) -> tuple[Image.Image, float | None]:
         """Project a fixed local world through the moving rover-mounted camera."""
         w, h = self.width, self.height
         focal, horizon = w * .71, h * .405
         pitch = math.radians(pose.pitch_deg + gimbal.pitch_deg)
+        rangefinder = _CenterRange.for_camera(w, h, pose.pitch_deg + gimbal.pitch_deg)
         cp, sp = math.cos(pitch), math.sin(pitch)
         shift = round(focal * math.tan(pitch))
         offset = round(((pose.heading_deg + gimbal.yaw_deg) % 360) / 360 * w * 4)
@@ -376,7 +441,7 @@ class SimulatedCameraSource(_LatestFrameSource):
             right, depth = local(-2.45 if index % 2 else 2.45, index * 11)
             if depth > 1 and visible(right, depth):
                 objects.append((depth, "marker", (right,)))
-        self._draw_solids(draw, project, objects)
+        self._draw_solids(draw, project, objects, rangefinder=rangefinder)
         def chassis_polygon(points):
             yaw = math.radians(gimbal.yaw_deg)
             cy, sy = math.cos(yaw), math.sin(yaw)
@@ -392,7 +457,7 @@ class SimulatedCameraSource(_LatestFrameSource):
             return [screen(*point) for point in self._clip_near(transformed, near=.05)]
 
         self._draw_fenders(draw, transform=chassis_polygon)
-        return self._apply_roll(image, pose.roll_deg + gimbal.roll_deg)
+        return self._apply_roll(image, pose.roll_deg + gimbal.roll_deg), rangefinder.reading
 
     @staticmethod
     def _apply_roll(image: Image.Image, roll: float) -> Image.Image:
@@ -419,7 +484,7 @@ class SimulatedCameraSource(_LatestFrameSource):
                 draw.line(points[1:], fill=(112, 118, 109), width=2)
 
     def _draw_solids(self, draw: ImageDraw.ImageDraw, project: Any,
-                     objects: list[tuple[float, str, Any]]) -> None:
+                     objects: list[tuple[float, str, Any]], *, rangefinder: _CenterRange | None = None) -> None:
         w, h, focal = self.width, self.height, self.width * .71
         for distance, kind, attributes in sorted(objects, reverse=True):
             if kind == "marker":
@@ -427,11 +492,15 @@ class SimulatedCameraSource(_LatestFrameSource):
                 p = [project(x + dx, distance, z) for dx, z in
                      ((-.035, 0), (.035, 0), (.035, 1.1), (-.035, 1.1))]
                 draw.polygon(p, fill=(168, 171, 161))
+                if rangefinder is not None:
+                    rangefinder.polygon(p, distance)
                 draw.line((project(x, distance, .5), project(x, distance, .78)),
                           fill=(53, 59, 52), width=max(1, round(focal * .07 / distance)))
                 plate = [project(x + dx, distance, z) for dx, z in
                          ((-.17, .93), (.17, .93), (.17, 1.18), (-.17, 1.18))]
                 draw.polygon(plate, fill=(179, 183, 173))
+                if rangefinder is not None:
+                    rangefinder.polygon(plate, distance)
                 continue
             x, size, variant = attributes
             px, py = project(x, distance)
@@ -444,6 +513,8 @@ class SimulatedCameraSource(_LatestFrameSource):
                         (px + s * .9, py - s * .13), (px + s * .58, py + s * .10)]
             tone = 99 + variant * 3
             draw.polygon(vertices, fill=(tone, tone + 3, tone - 1))
+            if rangefinder is not None:
+                rangefinder.polygon(vertices, distance)
             center = (px + s * .02, py - s * .20)
             draw.polygon([vertices[0], vertices[1], vertices[2], center], fill=(tone + 19, tone + 22, tone + 15))
             draw.polygon([vertices[2], vertices[3], vertices[4], center], fill=(tone + 8, tone + 11, tone + 5))
@@ -451,6 +522,10 @@ class SimulatedCameraSource(_LatestFrameSource):
 
     def render(self, elapsed: float) -> Image.Image:
         """Render a frame independently of the capture lifecycle (useful in previews)."""
+        return self._render_frame(elapsed)[0]
+
+    def _render_frame(self, elapsed: float) -> tuple[Image.Image, float | None]:
+        """Capture the image and center range from one immutable mount/body pose."""
         with self._motion_lock:
             pose = self._motion
             gimbal = self._gimbal
@@ -460,6 +535,7 @@ class SimulatedCameraSource(_LatestFrameSource):
         draw = ImageDraw.Draw(image)
         w, h = self.width, self.height
         focal, horizon = w * .71, h * .405
+        rangefinder = _CenterRange.for_camera(w, h)
         eye_height = 1.12
         sway = math.sin(elapsed * .11) * .12
         advance = elapsed * .34
@@ -501,14 +577,15 @@ class SimulatedCameraSource(_LatestFrameSource):
         for index in range(8):
             distance = 7 + ((index * 11 - advance) % 86)
             objects.append((distance, "marker", (-2.45 if index % 2 else 2.45,)))
-        self._draw_solids(draw, project, objects)
+        self._draw_solids(draw, project, objects, rangefinder=rangefinder)
         self._draw_fenders(draw)
-        return image
+        return image, rangefinder.reading
 
-    def _capture_frame(self, now: float) -> tuple[bytes, int, int, float]:
+    def _capture_frame(self, now: float) -> tuple[bytes, int, int, float, float | None]:
         output = BytesIO()
-        self.render(now - self._began).save(output, "JPEG", quality=86, optimize=False)
-        return output.getvalue(), self.width, self.height, now
+        image, range_m = self._render_frame(now - self._began)
+        image.save(output, "JPEG", quality=86, optimize=False)
+        return output.getvalue(), self.width, self.height, now, range_m
 
 
 def _opencv_capture_loop(device: int | str, width: int, height: int, fps: float,

@@ -6,7 +6,7 @@ import os
 import time
 from typing import Protocol
 
-from .controller import ControllerState, PS4Controller
+from .controller import Button, ControllerState, PS4Controller
 from .drive import DriveCommand, DriveInputRouter
 from .gimbal import VirtualGimbal
 from .motion import VirtualRover
@@ -108,6 +108,8 @@ class BaseStation:
         self.drive = DriveInputRouter()
         self.drive_command = DriveCommand()
         self.gimbal = VirtualGimbal()
+        self.map_toggle_sequence = 0
+        self._last_map_controller_update: tuple[str, int] | None = None
         self.started_at = time.monotonic()
         self.started = False
         self._closed = False
@@ -138,7 +140,7 @@ class BaseStation:
 
     def toggle_stabilization(self) -> None:
         if hasattr(self.camera, "set_gimbal"):
-            self.gimbal.set_stabilized(not self.gimbal.stabilized)
+            self.gimbal.cycle_stabilization()
 
     def replace_telemetry(self, source) -> None:
         self.stop_drive()
@@ -162,6 +164,12 @@ class BaseStation:
     def tick(self) -> None:
         if self.started:
             self.controller.update()
+            control = self.controller.state
+            controller_update = (control.device_id, control.sequence)
+            if controller_update != self._last_map_controller_update:
+                self._last_map_controller_update = controller_update
+                if self.drive.mode == "dualshock" and control.connected and control.buttons[Button.TOUCHPAD].pressed:
+                    self.map_toggle_sequence += 1
             self._bind_simulation()
             now = time.monotonic()
             self.drive_command = self.drive.command(self.controller.state, now=now) if self.virtual_driving else DriveCommand(source=self.drive.mode)
