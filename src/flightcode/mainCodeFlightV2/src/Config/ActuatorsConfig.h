@@ -1,0 +1,159 @@
+#pragma once
+#ifndef ACTUATORS_CONFIG_H
+#define ACTUATORS_CONFIG_H
+#include "../Utilities/Utilities.h"
+//#include "Arduino.h"
+/*
+ACTUATORS PARAMETERS AND CONFIG
+#
+*/
+
+struct ActuatorPWM_config {
+
+    uint8_t pin;
+
+    float frequency;
+
+    uint16_t pulseMin;
+    uint16_t pulseMax;
+
+    float valueMin; // associated to pulseMin
+    float valueMax; // associated to pulseMax
+
+    float trim_deg; // trim in degrees, to adjust for mechanical misalignment of the actuator
+    float resolution = 0.1;
+};
+
+
+struct ActuatorsCommand{
+   float vaneX1_deg;
+   float vaneX2_deg;
+   float vaneY1_deg;
+   float vaneY2_deg;
+   float thrust_percentage;
+};
+
+ namespace ActuatorsConfig {
+
+   // TVC  LIMITS
+   constexpr float TVC_TOTAL_AUTHORITY_BUDGET_deg = 12.0; // absolute max value before stalling of the VANES
+   constexpr float TVC_YAW_AUTHORITY_BUDGET_deg = 6.0;  // YAW (Z) authority budget
+
+
+   
+   // Automatic
+   constexpr float TVC_PITCH_ROLL_AUTHORITY_BUDGET_deg = TVC_TOTAL_AUTHORITY_BUDGET_deg - TVC_YAW_AUTHORITY_BUDGET_deg; // pitch/yaw (X/Y) authority budget
+
+
+   // ESC LIMITS
+
+
+
+
+   constexpr float ESC_thrust_min_percentage = 20.0; // in %
+   constexpr float ESC_thrust_max_percentage = 90.0; // in %
+
+
+
+   constexpr float EDF_kgf_datasheet_max = 3.4; // in newtons, from the EDF data sheet, at 12V and 35k RPM
+   constexpr float EDF_thrust_factor = 0.8; // to account for any discrepancies between the data sheet and actual performance
+   constexpr float THRUST_EDF_min = 0.0; // 0 newton
+   constexpr float THRUST_EDF_max = EDF_kgf_datasheet_max*Utilities::GRAVITY_MS2*EDF_thrust_factor;
+
+
+   // Servo and ESC HARDWARE CONFIGS
+   constexpr float Servo_frequency =50.0; // in Hz, for the vanes
+   constexpr float ESC_frequency =50.0;
+   
+   constexpr uint8_t ESC_pin = 10;
+
+   constexpr uint8_t Servo_X1_pin = 2;
+   constexpr uint8_t Servo_X2_pin = 3;
+   constexpr uint8_t Servo_Y1_pin = 4;
+   constexpr uint8_t Servo_Y2_pin = 5;
+
+   // Trim for servos
+
+   
+   constexpr float Servo_base_trim_deg = 50.0;
+   constexpr float Servo_X1_trim_deg = 0.0;
+   constexpr float Servo_X2_trim_deg = -2.0;
+   constexpr float Servo_Y1_trim_deg = -1.0;
+   constexpr float Servo_Y2_trim_deg = -7.0;
+
+
+
+   static_assert(Servo_frequency >0, "Servo Frequency must be greater than 0");  
+
+
+
+   constexpr ActuatorPWM_config ESC = {
+                  .pin = ESC_pin,
+                  .frequency = ESC_frequency,
+                  .pulseMin = 1000,
+                  .pulseMax = 2000,
+                  .valueMin = 0.0,
+                  .valueMax = 100.0,
+                  .trim_deg = 0.0
+    };
+
+
+
+
+    constexpr ActuatorPWM_config Servo_X1 = {
+                  .pin = Servo_X1_pin,
+                  .frequency = Servo_frequency,
+                  .pulseMin = 1000,
+                  .pulseMax = 2000,
+                  .valueMin = 0.0,
+                  .valueMax = 100.0,
+                  .trim_deg = Servo_X1_trim_deg + Servo_base_trim_deg
+    };
+
+        constexpr ActuatorPWM_config Servo_X2 = {
+                  .pin = Servo_X2_pin,
+                  .frequency = Servo_X1.frequency,
+                  .pulseMin = Servo_X1.pulseMin,
+                  .pulseMax = Servo_X1.pulseMax,
+                  .valueMin = Servo_X1.valueMin,
+                  .valueMax = Servo_X1.valueMax,
+                  .trim_deg = Servo_X2_trim_deg + Servo_base_trim_deg
+    };
+
+    
+        constexpr ActuatorPWM_config Servo_Y1 = {
+                  .pin = Servo_Y1_pin,
+                  .frequency = Servo_X1.frequency,
+                  .pulseMin = Servo_X1.pulseMin,
+                  .pulseMax = Servo_X1.pulseMax,
+                  .valueMin = Servo_X1.valueMin,
+                  .valueMax = Servo_X1.valueMax,
+                  .trim_deg = Servo_Y1_trim_deg + Servo_base_trim_deg
+    };
+
+    
+        constexpr ActuatorPWM_config Servo_Y2 = {
+                  .pin = Servo_Y2_pin,
+                  .frequency = Servo_X1.frequency,
+                  .pulseMin = Servo_X1.pulseMin,
+                  .pulseMax = Servo_X1.pulseMax,
+                  .valueMin = Servo_X1.valueMin,
+                  .valueMax = Servo_X1.valueMax,
+                  .trim_deg = Servo_Y2_trim_deg + Servo_base_trim_deg
+    };
+    
+
+
+   static_assert(TVC_YAW_AUTHORITY_BUDGET_deg <= TVC_TOTAL_AUTHORITY_BUDGET_deg, "YAW AUTHORITY BUDGET IS TOO LARGE");
+
+
+   static_assert(ESC_thrust_min_percentage < ESC_thrust_max_percentage, "MIN THRUST MUST BE LESS THAN MAX THRUST");
+   static_assert(ESC_thrust_min_percentage >= 0.0f, "MIN THRUST MUST NOT BE BELOW 0%");
+   static_assert(ESC_thrust_max_percentage <= 100.0f, "MAX THRUST MUST NOT EXCEED 100%");
+
+
+}
+
+ #endif
+
+
