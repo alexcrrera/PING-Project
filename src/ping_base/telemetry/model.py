@@ -88,7 +88,8 @@ class TelemetrySource(Protocol):
 
     A transport being open does not mean that fresh telemetry has arrived.
     Sources must stamp samples with the supplied ``now`` clock domain, never a
-    robot clock or wall time. No adapter in this package sends drive commands.
+    robot clock or wall time. The ordinary telemetry adapter is receive-only;
+    explicit radio bench mode sends provisional text commands for link testing.
     """
 
     name: str

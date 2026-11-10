@@ -60,7 +60,7 @@ these panels below the camera, with scrolling so controls remain accessible.
   | Steer | Left stick horizontal | A/D |
   | Hold brake | L2 | Space |
   | Toggle brake | Start / Options | B |
-  | Camera zoom in / out | D-pad Right / Left | Right / Left arrows |
+  | Camera zoom in / out | R1 / L1 or D-pad Right / Left | Right / Left arrows |
   | Map open / close | Touchpad click | M |
   | Camera tilt up / down | Right stick vertical | I/K |
   | Camera pan left / right | Right stick horizontal | J/L |
@@ -198,7 +198,7 @@ is measured on this computer, not a timestamp from the Pi; it does not measure
 end-to-end camera latency.
 
 ```powershell
-# Receive USB/radio telemetry at the project's planned 57600 baud:
+# Receive prototype JSON telemetry at 57600 baud:
 .\.venv\Scripts\python.exe -m ping_base --serial-port COM3 --baud 57600
 
 # Add PS4 monitoring using the existing USB/Bluetooth adapter:
@@ -213,12 +213,46 @@ The real rover packet format has not yet been supplied. The USB receiver uses a
 packet in [the telemetry protocol](src/ping_base/telemetry/PROTOCOL.md). A matching
 firmware sender can be connected directly; for a different binary/text protocol,
 replace the decoder while keeping the receiver, manager and interface unchanged.
+The connection dialog defaults to 57600 baud, verified with the connected COM3
+and COM4 radios. Leonidas currently sets its Teensy Serial5 port to 115200,
+which must be changed or matched by radio configuration before using the Teensy.
+Under **Radio Link**,
+the dashboard shows whether the selected port opened, the number of raw bytes
+received, and the last complete line. Leonidas `$LNDAS` lines can be seen there
+but do not populate rover metrics until a matching decoder is added. The
+prototype JSON sender also uses 57600 baud unless configured otherwise. Select
+**Radio bench · send and receive** for a two-radio test without the Teensy. The
+GUI keeps the virtual terrain and telemetry active, sends `TEST` on button
+press, `DRIVE` text from keyboard or controller input, and simulated `STATE`
+and `WHEELS` lines about ten times per second. Open the second radio at 57600 baud
+in a serial terminal to see those lines and type a line back; the GUI shows it
+under **Last received**. This bench mode sends no ARM command. The virtual
+terrain continues if the USB radio is unplugged.
+
+For the COM3/COM4 bench check, use two PowerShell windows:
+
+```powershell
+# Window 1: open the GUI, then choose Radio bench / COM3 / 57600 in Connections.
+cd "C:\Users\alexc\Documents\GitHub\PING Project"
+.\.venv\Scripts\python.exe -m ping_base
+```
+
+```powershell
+# Window 2: watch COM4 and type a line such as MANUAL:HELLO, then press Enter.
+cd "C:\Users\alexc\Documents\GitHub\PING Project"
+.\.venv\Scripts\python.exe -m serial.tools.miniterm COM4 57600 --eol LF
+```
+
+Use **Send TEST line** in the GUI to check COM3 → COM4. Text entered in the
+COM4 terminal checks COM4 → COM3. Press Ctrl+] to exit the terminal. Swap the
+COM numbers if you want the GUI to use COM4 instead.
 The receiver retries disconnected ports every two seconds. Serial reads are
 bounded and nonblocking; OS port-open time still depends on the device driver.
 
-Drive inputs control the **virtual rover only**. Selecting USB telemetry disables
-virtual driving; the serial adapter remains receive-only. The app does not
-transmit motor commands or implement real traction control. USB camera capture runs in a separate process so a
+Drive inputs control the virtual rover in simulation and radio bench mode; radio
+bench also sends text. Selecting ordinary USB telemetry disables driving; that
+serial adapter remains receive-only. The app does not implement real rover
+arming or traction control. USB camera capture runs in a separate process so a
 stalled camera driver cannot block telemetry or the interface. The UI is bound
 to the local computer by default; `127.0.0.1` on a phone refers to the phone,
 not to this computer.
@@ -372,8 +406,9 @@ print(state.buttons[Button.CROSS].toggled)  # True
 Consume a snapshot once per update in future command handling: `pressed` is an
 edge flag, not an event queue. Toggle state is diagnostic state, not an arming or
 drive command. The standalone diagnostic viewer never opens a serial port or
-sends radio commands. The dashboard's receive-only radio link defaults to
-**57600 baud**; firmware protocol and rover command handling remain separate.
+sends radio commands. The dashboard connection dialog and CLI default to
+**57600 baud** for the verified radio pair. Firmware protocol and rover command
+handling remain separate.
 
 ## Device diagnostics
 
@@ -416,8 +451,9 @@ Camera tests verify JPEG publication, worker cleanup and stalled-driver shutdown
 station tests verify shared ownership and main-thread SDL lifecycle. These tests
 use fake hardware and do not open real serial/camera/controller devices.
 Drive/model tests cover motion, steering, reverse, braking, heartbeat expiry,
-multiple clients, controller disconnect, shared telemetry/camera pose and serial
-mode remaining receive-only. Camera tests also verify idle stability, steering,
+multiple clients, controller disconnect, shared telemetry/camera pose, ordinary
+serial mode staying receive-only, and explicit radio bench transmission. Camera
+tests also verify idle stability, steering,
 reverse retracing and bounded procedural terrain caching.
 
 To check real hardware, start the viewer and test every button, both stick axes,

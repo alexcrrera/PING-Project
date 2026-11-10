@@ -94,9 +94,15 @@ class StationTests(unittest.TestCase):
         tick()
         tick(Button.LEFT)
         self.assertEqual(station.controller_actions[-1], (3, "camera_zoom_out"))
+        tick(Button.R1)
+        self.assertEqual(station.controller_actions[-1], (4, "camera_zoom_in"))
+        tick(Button.R1)
+        self.assertEqual(station.controller_action_sequence, 4)
+        tick(Button.L1)
+        self.assertEqual(station.controller_actions[-1], (5, "camera_zoom_out"))
         tick(connected=False)
         tick(Button.SHARE, Button.RIGHT)
-        self.assertEqual(station.controller_action_sequence, 3)
+        self.assertEqual(station.controller_action_sequence, 5)
         station.close()
 
     def test_right_stick_pans_and_tilts_and_disconnect_or_mode_switch_stops_it(self):

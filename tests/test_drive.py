@@ -9,7 +9,7 @@ from ping_base.controller import Button, ControllerState, PS4Controller, RawInpu
 from ping_base.drive import DriveCommand, DriveInputRouter
 from ping_base.motion import RoverMotion
 from ping_base.station import BaseStation
-from ping_base.telemetry import SerialTelemetrySource, SimulatedTelemetrySource, TelemetryManager, TelemetrySample
+from ping_base.telemetry import RadioBenchSource, SerialTelemetrySource, SimulatedTelemetrySource, TelemetryManager, TelemetrySample
 
 
 class Clock:
@@ -178,6 +178,27 @@ class ReceivingOnlyPort:
         pass
 
 
+class RadioBenchPort:
+    def __init__(self):
+        self.data = b""
+        self.writes = []
+
+    @property
+    def in_waiting(self):
+        return len(self.data)
+
+    def read(self, size):
+        data, self.data = self.data[:size], self.data[size:]
+        return data
+
+    def write(self, data):
+        self.writes.append(data)
+        return len(data)
+
+    def close(self):
+        pass
+
+
 class StationDrivingTests(unittest.TestCase):
     def setUp(self):
         self.clock = Clock()
@@ -243,6 +264,24 @@ class StationDrivingTests(unittest.TestCase):
         self.assertEqual(self.station.virtual_rover.state.speed_mps, 0)
         self.frames(.5, keyboard=(1, 0))
         self.assertGreater(self.station.virtual_rover.state.speed_mps, .5)
+
+    def test_radio_bench_routes_keyboard_and_virtual_terrain_to_radio(self):
+        port = RadioBenchPort()
+        bench = RadioBenchSource("COM3", serial_factory=lambda **kw: port)
+        self.station.replace_telemetry(bench)
+        self.frames(.3, keyboard=(1, -.25))
+        self.assertTrue(self.station.drive_input_enabled)
+        self.assertTrue(self.station.virtual_driving)
+        self.assertGreater(self.station.virtual_rover.state.speed_mps, 0)
+        self.assertEqual(self.manager.state.sample.speed_mps,
+                         self.station.virtual_rover.state.speed_mps)
+        self.assertEqual(self.manager.state.sample.wheel_rpm,
+                         self.station.virtual_rover.state.wheel_rpm)
+        self.assertTrue(any(b",+1.00,-0.25,0\n" in line for line in port.writes))
+        self.assertTrue(any(line.startswith(b"$PING,1,STATE,") for line in port.writes))
+        self.assertTrue(any(line.startswith(b"$PING,1,WHEELS,") for line in port.writes))
+        self.station.stop_drive()
+        self.assertTrue(port.writes[-1].endswith(b",+0.00,+0.00,1\n"))
 
     def test_pausing_simulation_brakes_motion_and_retains_telemetry_stale_path(self):
         self.frames(1, keyboard=(1, 0))

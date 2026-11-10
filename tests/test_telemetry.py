@@ -4,6 +4,7 @@ from dataclasses import FrozenInstanceError, asdict
 
 from ping_base.telemetry import (
     JsonLineTelemetryDecoder,
+    RadioBenchSource,
     SerialTelemetrySource,
     SimulatedTelemetrySource,
     TelemetryManager,
@@ -243,6 +244,64 @@ class DecoderTests(unittest.TestCase):
 
 
 class SerialSourceTests(unittest.TestCase):
+    def test_radio_bench_keeps_virtual_telemetry_when_radio_is_absent(self):
+        def unavailable(**kwargs):
+            raise OSError("radio unplugged")
+
+        source = RadioBenchSource("COM3", serial_factory=unavailable)
+        manager = TelemetryManager(source)
+        state = manager.update(0)
+        self.assertTrue(state.connected)
+        self.assertFalse(source.radio_connected)
+        self.assertIn("radio unplugged", source.error)
+        manager.close()
+
+    def test_radio_bench_sends_bounded_text_and_receives_raw_lines(self):
+        class BenchPort(FakePort):
+            writes = None
+
+            def __init__(self):
+                super().__init__()
+                self.writes = []
+
+            def write(self, data):
+                self.writes.append(data)
+                return len(data)
+
+        port = BenchPort()
+        source = RadioBenchSource("COM3", serial_factory=lambda **kw: port)
+        source.poll(0)
+        self.assertTrue(source.send_test(0))
+        self.assertEqual(port.writes[-1], b"TEST:HELLO,1\n")
+        self.assertTrue(source.send_drive(1, -.5, False, 0))
+        self.assertEqual(port.writes[-1], b"DRIVE:2,+1.00,-0.50,0\n")
+        self.assertFalse(source.send_drive(1, -.5, False, .05))
+        self.assertTrue(source.send_drive(0, 0, True, .1))
+        self.assertEqual(source.bytes_sent, sum(len(line) for line in port.writes))
+        port.data = b"MANUAL:HELLO\n"
+        source.poll(.2)
+        self.assertEqual(source.last_raw_line, "MANUAL:HELLO")
+        source.close()
+
+    def test_raw_diagnostics_distinguish_open_port_from_unsupported_format(self):
+        port = FakePort()
+        source = SerialTelemetrySource("COM3", baudrate=115200, serial_factory=lambda **kw: port)
+        manager = TelemetryManager(source)
+        self.assertEqual(manager.update(0).status, TelemetryStatus.WAITING)
+        self.assertTrue(source.transport_connected)
+        self.assertEqual(source.bytes_received, 0)
+        port.data = b"$LNDAS,1.2,"
+        self.assertEqual(manager.update(0.1).status, TelemetryStatus.WAITING)
+        self.assertEqual(source.bytes_received, len(b"$LNDAS,1.2,"))
+        self.assertIsNone(source.last_raw_line)
+        port.data = b"3.4,*\n"
+        state = manager.update(0.2)
+        self.assertEqual(source.last_raw_line, "$LNDAS,1.2,3.4,*")
+        self.assertEqual(source.last_byte_at, 0.2)
+        self.assertEqual(state.rejected_count, 1)
+        self.assertEqual(state.received_count, 0)
+        manager.close()
+
     def test_reads_are_bounded_nonblocking_and_never_transmit(self):
         port = FakePort(wire() * 4)
         opened = []

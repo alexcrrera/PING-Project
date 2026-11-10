@@ -11,7 +11,7 @@ from .controller import Button, ControllerState, PS4Controller
 from .drive import DriveCommand, DriveInputRouter
 from .gimbal import VirtualGimbal
 from .motion import VirtualRover
-from .telemetry import SimulatedTelemetrySource, TelemetryManager
+from .telemetry import RadioBenchSource, SimulatedTelemetrySource, TelemetryManager
 
 
 class ControllerService(Protocol):
@@ -123,11 +123,18 @@ class BaseStation:
         source = getattr(self.telemetry, "source", None)
         if isinstance(source, SimulatedTelemetrySource):
             source.rover = self.virtual_rover
+        elif isinstance(source, RadioBenchSource):
+            source.simulation.rover = self.virtual_rover
 
     @property
     def virtual_driving(self) -> bool:
         source = getattr(self.telemetry, "source", None)
-        return isinstance(source, SimulatedTelemetrySource) and not source.paused
+        return ((isinstance(source, SimulatedTelemetrySource) and not source.paused)
+                or isinstance(source, RadioBenchSource))
+
+    @property
+    def drive_input_enabled(self) -> bool:
+        return self.virtual_driving or isinstance(getattr(self.telemetry, "source", None), RadioBenchSource)
 
     def set_drive_mode(self, mode: str) -> None:
         self.stop_drive()
@@ -142,9 +149,12 @@ class BaseStation:
         self.drive.clear()
         self.drive_command = DriveCommand(source=self.drive.mode)
         self.virtual_rover.stop()
+        source = getattr(self.telemetry, "source", None)
+        if isinstance(source, RadioBenchSource):
+            source.send_drive(0.0, 0.0, True, time.monotonic(), force=True)
 
     def toggle_brake(self) -> None:
-        if self.virtual_driving:
+        if self.drive_input_enabled:
             self.brake_latched = not self.brake_latched
             if self.brake_latched:
                 self.drive_command = DriveCommand(source=self.drive.mode)
@@ -195,7 +205,9 @@ class BaseStation:
                     if control.buttons[Button.OPTIONS].pressed:
                         self.toggle_brake()
                     for button, action in ((Button.RIGHT, "camera_zoom_in"),
+                                           (Button.R1, "camera_zoom_in"),
                                            (Button.LEFT, "camera_zoom_out"),
+                                           (Button.L1, "camera_zoom_out"),
                                            (Button.TRIANGLE, "map_zoom")):
                         if control.buttons[button].pressed:
                             self.controller_action_sequence += 1
@@ -208,9 +220,12 @@ class BaseStation:
             self._bind_simulation()
             now = time.monotonic()
             self.drive_command = (self.drive.command(control, now=now)
-                                  if self.virtual_driving and not self.brake_latched
+                                  if self.drive_input_enabled and not self.brake_latched
                                   else DriveCommand(source=self.drive.mode))
-            self.virtual_rover.set_command(self.drive_command.throttle, self.drive_command.steering, self.drive_command.brake)
+            if self.virtual_driving:
+                self.virtual_rover.set_command(self.drive_command.throttle, self.drive_command.steering, self.drive_command.brake)
+            else:
+                self.virtual_rover.stop()
             motion = self.virtual_rover.advance(now)
             self.gimbal.update_attitude(motion.heading_deg, motion.pitch_deg, motion.roll_deg)
             if self.drive.mode == "dualshock" and control.connected and hasattr(self.camera, "set_gimbal"):
@@ -229,6 +244,10 @@ class BaseStation:
                 if hasattr(self.camera, "set_gimbal"):
                     self.camera.set_gimbal(gimbal_pose)
             self.telemetry.update()
+            source = getattr(self.telemetry, "source", None)
+            if isinstance(source, RadioBenchSource):
+                source.send_drive(self.drive_command.throttle, self.drive_command.steering,
+                                  self.drive_command.brake, now)
 
     def close(self) -> None:
         if self._closed:

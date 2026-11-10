@@ -22,7 +22,7 @@ from .navigation import MAP_ZOOM_LEVELS, campus_map, simulated_position
 from .orientation import heading_indicator, pitch_indicator, roll_indicator, wheel_slip_indicator
 from .rover import RoverView
 from .station import BaseStation
-from .telemetry import SerialTelemetrySource, SimulatedTelemetrySource
+from .telemetry import RadioBenchSource, SerialTelemetrySource, SimulatedTelemetrySource
 from .theme import CSS
 
 
@@ -416,8 +416,11 @@ class Dashboard:
                 self._metric("latency", "Latency", "ms")
                 self._metric("age", "Last packet", "ms")
                 self._label("packet_count", "0 VALID PACKETS", "subtext mt-2")
+                self._label("serial_link", "", "subtext mt-2")
+                self._label("serial_preview", "", "subtext").style("overflow-wrap:anywhere")
+                self.radio_test_button = ui.button("Send TEST line", icon="send", on_click=self.send_radio_test).props("outline dense")
             with ui.element("div").classes("telemetry-section").style("border-bottom:0"):
-                ui.label("VIRTUAL DRIVE").classes("eyebrow")
+                ui.label("DRIVE INPUT").classes("eyebrow")
                 self.drive_toggle = ui.toggle({"keyboard": "Keyboard", "dualshock": "DualShock"},
                                               value=self.station.drive.mode,
                                               on_change=lambda e: self.station.set_drive_mode(e.value)).props('dense no-caps toggle-text-color=black aria-label="Virtual drive input"').classes("drive-mode")
@@ -430,7 +433,7 @@ class Dashboard:
                 self._label("drive_command", "Throttle +0.00 / Turn +0.00", "control-hint")
                 self.brake_button = ui.button("BRAKE OFF", on_click=self.toggle_brake).props('outline dense no-caps aria-pressed="false"').classes("brake-toggle")
                 self._label("drive_hint", "W/S or ↑/↓ drive · A/D steer · Space brake", "control-hint")
-                ui.label("←/→ camera zoom · M / Touchpad map · Enter / △ map zoom").classes("control-hint")
+                ui.label("←/→ or R1/L1 camera zoom · M / Touchpad map · Enter / △ map zoom").classes("control-hint")
                 ui.label("× / X / R camera reset · Share / Z stabilization").classes("control-hint")
 
     def _settings(self) -> None:
@@ -447,13 +450,13 @@ class Dashboard:
             ui.button("Connect camera / Retry", icon="videocam", on_click=self.apply_camera).props("outline")
             ui.separator()
             ui.html("<h2>Telemetry source</h2>", sanitize=False)
-            ui.label("Switch receivers while keeping the same dashboard. USB mode starts waiting for a valid packet.").classes("dialog-note")
-            self.source_select = ui.select({"simulation": "Virtual robot", "serial": "USB / serial"}, value="simulation", label="Source").props("outlined dense")
+            ui.label("Radio bench runs the virtual terrain and sends TEST, DRIVE, STATE and WHEELS lines through one USB radio. Open the other radio in your serial app.").classes("dialog-note")
+            self.source_select = ui.select({"simulation": "Virtual robot", "serial": "USB / serial receive only", "radio_bench": "Radio bench · send and receive"}, value="simulation", label="Source").props("outlined dense")
             self.port_input = ui.input("Serial port", placeholder="COM3 or /dev/ttyUSB0").props("outlined dense")
             self.baud_input = ui.number("Baud rate", value=57600, min=1, precision=0).props("outlined dense")
             self.port_hint = ui.label("").classes("dialog-note")
             ui.button("Scan USB ports", icon="refresh", on_click=self.scan_ports).props("flat dense")
-            ui.label("Serial input uses the provisional JSON-lines contract in the project documentation.").classes("dialog-note")
+            ui.label("COM3 and COM4 exchanged clean text at 57600 baud. Leonidas code currently configures Serial5 for 115200. Raw lines appear under Radio Link; metrics still need a matching decoder.").classes("dialog-note")
             self.font_note = ui.label("Suisse Light + Medium / local fonts" if self.has_suisse else "Suisse not found / use --font-dir to select its folder").classes("subtext")
             with ui.element("div").classes("dialog-actions"):
                 ui.button("Cancel", on_click=self.dialog.close).props("flat")
@@ -474,7 +477,8 @@ class Dashboard:
         elif isinstance(device, int):
             self.camera_index.set_value(device)
         source = self.station.telemetry.source
-        self.source_select.set_value("simulation" if isinstance(source, SimulatedTelemetrySource) else "serial")
+        self.source_select.set_value("simulation" if isinstance(source, SimulatedTelemetrySource) else
+                                     "radio_bench" if isinstance(source, RadioBenchSource) else "serial")
         if isinstance(source, SerialTelemetrySource):
             self.port_input.set_value(source.port)
             self.baud_input.set_value(source.baudrate)
@@ -503,13 +507,14 @@ class Dashboard:
         self.refresh()
 
     def apply_source(self) -> None:
-        if self.source_select.value == "serial":
+        if self.source_select.value in ("serial", "radio_bench"):
             port = (self.port_input.value or "").strip()
             baud = self.baud_input.value
             if not port or baud is None or baud <= 0 or baud != int(baud):
                 ui.notify("Enter a serial port and a positive whole-number baud rate.")
                 return
-            source = SerialTelemetrySource(port, baudrate=int(baud))
+            source_type = RadioBenchSource if self.source_select.value == "radio_bench" else SerialTelemetrySource
+            source = source_type(port, baudrate=int(baud))
         else:
             source = SimulatedTelemetrySource()
         self.station.replace_telemetry(source)
@@ -524,13 +529,21 @@ class Dashboard:
             source.paused = not source.paused
             self.refresh()
 
+    def send_radio_test(self) -> None:
+        source = self.station.telemetry.source
+        if not isinstance(source, RadioBenchSource):
+            return
+        sent = source.send_test(time.monotonic())
+        ui.notify("TEST line sent to radio" if sent else "Radio port is not open; check Radio Link")
+        self.refresh()
+
     def _drive_event(self, event) -> None:
         payload = event.args
         if not isinstance(payload, dict):
             return
         if payload.get("release") is True:
             self.station.drive.clear(self.client.id)
-        elif self.station.virtual_driving:
+        elif self.station.drive_input_enabled:
             self.station.drive.keyboard(self.client.id, payload.get("throttle", 0),
                                         payload.get("steering", 0), payload.get("brake", False))
 
@@ -656,8 +669,9 @@ class Dashboard:
         state = manager.state
         sample = state.sample
         source = manager.source
-        simulated = isinstance(source, SimulatedTelemetrySource)
-        paused = simulated and source.paused
+        radio_bench = isinstance(source, RadioBenchSource)
+        simulated = isinstance(source, (SimulatedTelemetrySource, RadioBenchSource))
+        paused = isinstance(source, SimulatedTelemetrySource) and source.paused
         now = time.monotonic()
         actions = [(sequence, action) for sequence, action in self.station.controller_actions
                    if sequence > self._controller_action_sequence]
@@ -674,7 +688,7 @@ class Dashboard:
             if (sequence - self._map_toggle_sequence) % 2:
                 self._set_map_expanded(not self.map_expanded)
             self._map_toggle_sequence = sequence
-        self.input_guard.props(f'data-mode="{self.station.drive.mode}" data-enabled="{str(self.station.virtual_driving).lower()}" data-gimbal="{str(self.gimbal_available).lower()}" data-map-open="{str(self.map_expanded).lower()}"')
+        self.input_guard.props(f'data-mode="{self.station.drive.mode}" data-enabled="{str(self.station.drive_input_enabled).lower()}" data-gimbal="{str(self.gimbal_available).lower()}" data-map-open="{str(self.map_expanded).lower()}"')
         self.gimbal_controls.set_visibility(self.gimbal_available)
         self.gimbal_view.set_visibility(self.gimbal_available)
         self._text("gimbal_hint", "RIGHT STICK / IJKL AIM · R / × HOME" if self.gimbal_available else "FORWARD VIEW")
@@ -697,17 +711,37 @@ class Dashboard:
         self.rover.update_gimbal(gimbal)
         if self.drive_toggle.value != self.station.drive.mode:
             self.drive_toggle.set_value(self.station.drive.mode)
-        self.drive_toggle.set_enabled(simulated and not paused)
+        self.drive_toggle.set_enabled(self.station.drive_input_enabled)
         self._text("session", f"LOCAL STATION  /  {datetime.now():%H:%M:%S}")
-        self._text("mode", "VIRTUAL TELEMETRY" if simulated else "USB TELEMETRY")
-        self._text("rate", "PAUSED / VIRTUAL" if paused else "VIRTUAL / 10 HZ" if simulated else "USB / RECEIVE ONLY")
-        self.pause_button.set_visibility(simulated)
+        self._text("mode", "RADIO BENCH + TERRAIN" if radio_bench else "VIRTUAL TELEMETRY" if simulated else "USB TELEMETRY")
+        self._text("rate", "RADIO / VIRTUAL 10 HZ" if radio_bench else "PAUSED / VIRTUAL" if paused else "VIRTUAL / 10 HZ" if simulated else "USB / RECEIVE ONLY")
+        self.pause_button.set_visibility(isinstance(source, SimulatedTelemetrySource))
         self.pause_button.set_text("Resume simulation" if paused else "Pause simulation")
         self.pause_button.props(f"icon={'play_arrow' if paused else 'pause'}")
-        self._text("link", state.status.value.upper())
-        self.values["link"].style(f"color:{'var(--accent)' if state.connected else 'var(--warn)'}")
+        radio_open = radio_bench and source.radio_connected
+        self._text("link", "SIM + RADIO" if radio_open else "SIM / RADIO OFF" if radio_bench else state.status.value.upper())
+        self.values["link"].style(f"color:{'var(--accent)' if state.connected and (not radio_bench or radio_open) else 'var(--warn)'}")
         self._text("age", f"{state.age_seconds * 1000:.0f}" if state.age_seconds is not None else "—")
         self._text("packet_count", f"{state.received_count:,} VALID / {state.rejected_count:,} REJECTED")
+        self.radio_test_button.set_visibility(radio_bench)
+        serial_visible = isinstance(source, SerialTelemetrySource)
+        for key in ("serial_link", "serial_preview"):
+            self.values[key].set_visibility(serial_visible)
+        if serial_visible:
+            if source.error:
+                serial_status = f"{source.port} · {source.error}"
+            elif source.radio_connected if radio_bench else source.transport_connected:
+                serial_status = f"{source.port} OPEN · {source.bytes_received:,} BYTES RECEIVED"
+                if radio_bench:
+                    serial_status += f" · {source.bytes_sent:,} BYTES SENT"
+                if source.bytes_received and not state.received_count:
+                    serial_status += " · RAW TEXT RECEIVED" if radio_bench else " · NO VALID TELEMETRY"
+            else:
+                serial_status = f"{source.port} · CONNECTING"
+            self._text("serial_link", serial_status)
+            self._text("serial_preview", "Last received: " + (source.last_raw_line or
+                       ("bytes arriving, waiting for newline" if source.bytes_received else "none yet")) +
+                       (f" · Last sent: {source.last_sent_line or 'none yet'}" if radio_bench else ""))
         fields = {"speed": ("speed_mps", ".2f"), "battery": ("battery_percent", ".0f"),
                   "voltage": ("battery_voltage", ".1f"), "temperature": ("motor_temp_c", ".1f"),
                   "distance": ("distance_m", ".1f"), "rssi": ("signal_rssi_dbm", ".0f"), "latency": ("latency_ms", ".0f")}
@@ -804,15 +838,16 @@ class Dashboard:
             self._text(key, f"{'L' if key == 'left_stick' else 'R'}  {stick.x:+.2f} / {stick.y:+.2f}")
         command = self.station.drive_command
         latched = self.station.brake_latched
-        self.brake_button.set_enabled(self.station.virtual_driving)
+        self.brake_button.set_enabled(self.station.drive_input_enabled)
         self.brake_button.set_text("BRAKE ON" if latched else "BRAKE OFF")
         self.brake_button.props(f'aria-pressed="{str(latched).lower()}"')
-        self._text("drive_command", "BRAKE" if command.brake and self.station.virtual_driving else f"Throttle {command.throttle:+.2f} / Turn {command.steering:+.2f}")
-        self._text("drive_hint", "USB telemetry / virtual drive unavailable" if not simulated else "Simulation paused" if paused else "W/S or ↑/↓ drive · A/D steer · Space hold / B toggle brake" if self.station.drive.mode == "keyboard" else "R2 accelerate · Left stick steer · L2 hold / Start toggle brake")
+        self._text("drive_command", "BRAKE" if command.brake and self.station.drive_input_enabled else f"Throttle {command.throttle:+.2f} / Turn {command.steering:+.2f}")
+        self._text("drive_hint", ("W/S or ↑/↓ sends DRIVE · A/D steer · Space brake" if self.station.drive.mode == "keyboard" else "R2 sends DRIVE · Left stick steers · L2 brakes") if radio_bench else "USB telemetry / virtual drive unavailable" if not simulated else "Simulation paused" if paused else "W/S or ↑/↓ drive · A/D steer · Space hold / B toggle brake" if self.station.drive.mode == "keyboard" else "R2 accelerate · Left stick steer · L2 hold / Start toggle brake")
         self.values["controller"].props(f'title="{escape(controller.status)}"')
         age = "" if state.age_seconds is None else f" / age {state.age_seconds:.1f}s"
-        self._text("footer", f"{state.source_name} / {state.status.value}{age}" + (f" / {state.error}" if state.error else ""))
-        self._text("footer_camera", f"Camera: {'virtual' if camera.simulated else camera.name}  ·  Drive: {self.station.drive.mode if simulated else 'monitor only'}")
+        link_status = "radio open" if radio_open else "radio offline" if radio_bench else state.status.value
+        self._text("footer", f"{state.source_name} / {link_status}{age}" + (f" / {state.error}" if state.error else ""))
+        self._text("footer_camera", f"Camera: {'virtual' if camera.simulated else camera.name}  ·  Drive: {'radio bench' if radio_bench else self.station.drive.mode if simulated else 'monitor only'}")
 
 
 def configure_dashboard(station: BaseStation, *, font_dir: str | None = None) -> None:

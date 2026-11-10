@@ -123,6 +123,10 @@ class SerialTelemetrySource:
         self._serial = None
         self._next_open = float("-inf")
         self._closed = False
+        self.bytes_received = 0
+        self.last_byte_at: float | None = None
+        self.last_raw_line: str | None = None
+        self._raw_line = bytearray()
 
     @property
     def rejected_count(self) -> int:
@@ -141,6 +145,10 @@ class SerialTelemetrySource:
                 self.transport_connected = True
                 self.error = None
                 self.decoder.reset()
+                self.bytes_received = 0
+                self.last_byte_at = None
+                self.last_raw_line = None
+                self._raw_line.clear()
             except (OSError, ValueError, ImportError) as exc:
                 self.error = f"Cannot open {self.port}: {exc}"
                 self.transport_connected = False
@@ -150,12 +158,26 @@ class SerialTelemetrySource:
             if not waiting:
                 return ()
             data = self._serial.read(min(waiting, self._max_read_bytes))
+            self._observe_raw(data, now)
             return self.decoder.feed(data, now)
         except (OSError, ValueError) as exc:
             self.error = f"Telemetry link lost: {exc}"
             self._drop_connection()
             self._next_open = now + self._reconnect_interval
             return ()
+
+    def _observe_raw(self, data: bytes, now: float) -> None:
+        if not data:
+            return
+        self.bytes_received += len(data)
+        self.last_byte_at = now
+        for byte in data:
+            if byte == 10:
+                if self._raw_line:
+                    self.last_raw_line = self._raw_line.decode("ascii", errors="replace").rstrip("\r")
+                self._raw_line.clear()
+            elif len(self._raw_line) < 160:
+                self._raw_line.append(byte)
 
     def _drop_connection(self) -> None:
         if self._serial is not None:
@@ -166,6 +188,7 @@ class SerialTelemetrySource:
         self._serial = None
         self.transport_connected = False
         self.decoder.reset()
+        self._raw_line.clear()
 
     def close(self) -> None:
         self._closed = True
