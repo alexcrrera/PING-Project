@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from io import BytesIO
 import math
 import multiprocessing as mp
+import os
 import queue
 import random
 import threading
@@ -609,28 +610,46 @@ def _opencv_capture_loop(device: int | str, width: int, height: int, fps: float,
     try:
         import cv2
 
-        capture = cv2.VideoCapture(device)
+        network = isinstance(device, str) and "://" in device
+        if network:
+            # This environment belongs to the isolated capture process only.
+            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "fflags;nobuffer|flags;low_delay|probesize;32768|analyzeduration;0"
+            capture = cv2.VideoCapture(device, cv2.CAP_FFMPEG, [
+                cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000,
+                cv2.CAP_PROP_READ_TIMEOUT_MSEC, 3000,
+            ])
+        else:
+            capture = cv2.VideoCapture(device)
         if not capture.isOpened():
-            raise RuntimeError(f"Cannot open USB camera {device}")
-        capture.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-        capture.set(cv2.CAP_PROP_FPS, fps)
+            raise RuntimeError("Cannot open network camera. Check the address, close VLC, and restart the Pi stream before reconnecting."
+                               if network else f"Cannot open USB camera {device}")
+        if not network:
+            capture.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+            capture.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+            capture.set(cv2.CAP_PROP_FPS, fps)
         capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         failures = 0
+        last_published = -math.inf
         while not stop.is_set():
             began = time.monotonic()
             ok, frame = capture.read()
             if not ok or frame is None:
                 failures += 1
                 if failures >= 5:
-                    raise RuntimeError("USB camera stopped returning frames")
+                    raise RuntimeError("Camera stopped returning frames. Restart the stream and reconnect.")
                 stop.wait(.1)
                 continue
             failures = 0
+            # Drain every network frame, even when the GUI publishes fewer FPS.
+            # Sleeping here lets a 30 FPS source accumulate seconds of latency.
+            if network and began - last_published < 1.0 / fps:
+                continue
             ok, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 86])
             if ok:
                 publish(("frame", encoded.tobytes(), int(frame.shape[1]), int(frame.shape[0]), began))
-            stop.wait(max(0.0, 1.0 / fps - (time.monotonic() - began)))
+                last_published = began
+            if not network:
+                stop.wait(max(0.0, 1.0 / fps - (time.monotonic() - began)))
     except ImportError:
         publish(("error", "USB camera support needs the optional opencv-python package"))
     except Exception as exc:

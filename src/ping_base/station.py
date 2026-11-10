@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import time
+from collections import deque
 from typing import Protocol
 
 from .controller import Button, ControllerState, PS4Controller
@@ -107,8 +108,11 @@ class BaseStation:
         self.virtual_rover = virtual_rover or VirtualRover()
         self.drive = DriveInputRouter()
         self.drive_command = DriveCommand()
+        self.brake_latched = False
         self.gimbal = VirtualGimbal()
         self.map_toggle_sequence = 0
+        self.controller_actions = deque(maxlen=128)
+        self.controller_action_sequence = 0
         self._last_map_controller_update: tuple[str, int] | None = None
         self.started_at = time.monotonic()
         self.started = False
@@ -127,6 +131,7 @@ class BaseStation:
 
     def set_drive_mode(self, mode: str) -> None:
         self.stop_drive()
+        self.gimbal.release("dualshock")
         self.drive.set_mode(mode)
         if mode == "dualshock" and isinstance(self.controller, NoController):
             self.controller = PS4ControllerService()
@@ -138,6 +143,13 @@ class BaseStation:
         self.drive_command = DriveCommand(source=self.drive.mode)
         self.virtual_rover.stop()
 
+    def toggle_brake(self) -> None:
+        if self.virtual_driving:
+            self.brake_latched = not self.brake_latched
+            if self.brake_latched:
+                self.drive_command = DriveCommand(source=self.drive.mode)
+                self.virtual_rover.stop()
+
     def toggle_stabilization(self) -> None:
         if hasattr(self.camera, "set_gimbal"):
             self.gimbal.cycle_stabilization()
@@ -146,6 +158,15 @@ class BaseStation:
         self.stop_drive()
         self.telemetry.replace_source(source)
         self._bind_simulation()
+
+    def replace_camera(self, camera) -> None:
+        """Release the previous reader before opening the shared replacement."""
+        if self._closed:
+            raise RuntimeError("A closed BaseStation cannot change cameras")
+        self.camera.close()
+        self.camera = camera
+        if self.started:
+            self.camera.start()
 
     def start(self) -> None:
         if self._closed:
@@ -168,14 +189,37 @@ class BaseStation:
             controller_update = (control.device_id, control.sequence)
             if controller_update != self._last_map_controller_update:
                 self._last_map_controller_update = controller_update
-                if self.drive.mode == "dualshock" and control.connected and control.buttons[Button.TOUCHPAD].pressed:
-                    self.map_toggle_sequence += 1
+                if self.drive.mode == "dualshock" and control.connected:
+                    if control.buttons[Button.TOUCHPAD].pressed:
+                        self.map_toggle_sequence += 1
+                    if control.buttons[Button.OPTIONS].pressed:
+                        self.toggle_brake()
+                    for button, action in ((Button.RIGHT, "camera_zoom_in"),
+                                           (Button.LEFT, "camera_zoom_out"),
+                                           (Button.TRIANGLE, "map_zoom")):
+                        if control.buttons[button].pressed:
+                            self.controller_action_sequence += 1
+                            self.controller_actions.append((self.controller_action_sequence, action))
+                    if hasattr(self.camera, "set_gimbal"):
+                        if control.buttons[Button.SHARE].pressed:
+                            self.toggle_stabilization()
+                        if control.buttons[Button.CROSS].pressed:
+                            self.gimbal.reset()
             self._bind_simulation()
             now = time.monotonic()
-            self.drive_command = self.drive.command(self.controller.state, now=now) if self.virtual_driving else DriveCommand(source=self.drive.mode)
+            self.drive_command = (self.drive.command(control, now=now)
+                                  if self.virtual_driving and not self.brake_latched
+                                  else DriveCommand(source=self.drive.mode))
             self.virtual_rover.set_command(self.drive_command.throttle, self.drive_command.steering, self.drive_command.brake)
             motion = self.virtual_rover.advance(now)
             self.gimbal.update_attitude(motion.heading_deg, motion.pitch_deg, motion.roll_deg)
+            if self.drive.mode == "dualshock" and control.connected and hasattr(self.camera, "set_gimbal"):
+                if control.right_stick.x or control.right_stick.y:
+                    self.gimbal.set_input("dualshock", control.right_stick.x, -control.right_stick.y, now=now)
+                else:
+                    self.gimbal.release("dualshock", now=now)
+            else:
+                self.gimbal.release("dualshock", now=now)
             gimbal_pose = self.gimbal.advance(now)
             if hasattr(self.camera, "set_view"):
                 self.camera.set_view(motion, gimbal_pose)

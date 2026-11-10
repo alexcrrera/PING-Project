@@ -1,11 +1,14 @@
-"""Local camera HUD artwork: a scrolling heading tape and a precise reticle."""
+"""Local camera HUD artwork for heading, gimbal orientation, and aiming."""
 
 from math import ceil, floor, isfinite
+
+from .gimbal import GimbalPose, VirtualGimbal
 
 
 _CARDINALS = {0: "N", 45: "NE", 90: "E", 135: "SE",
               180: "S", 225: "SW", 270: "W", 315: "NW"}
 _PIXELS_PER_DEGREE = 2.3
+_HUD_GREEN = "#5dff55"
 
 
 def range_readout(distance_m: float | None) -> str:
@@ -76,14 +79,26 @@ def heading_tape(heading: float | None) -> str:
     return ''.join(pieces)
 
 
-_RETICLE_GEOMETRY = (
-    '<path d="M80 19V43M80 77V101M25 60H63M97 60H135"/>'
-    '<path d="M73 28H87M76 36H84M76 84H84M73 92H87'
-    'M37 53V67M48 56V64M112 56V64M123 53V67"/>'
-    '<path d="M52 38V33H59M101 33H108V38M52 82V87H59M101 87H108V82"/>'
-    '<circle cx="80" cy="60" r="4"/>'
-    '<path d="M79 60H81"/>'
-)
+def gimbal_indicator(pose: GimbalPose) -> str:
+    """Plot yaw to the right and pitch up, with home at the box center."""
+    x = 64 + 56 * pose.yaw_deg / VirtualGimbal.YAW_LIMIT
+    y = 24 - 16 * pose.pitch_deg / VirtualGimbal.PITCH_LIMIT
+    label = f"Camera relative to rover: yaw {pose.yaw_deg:+.1f}°, pitch {pose.pitch_deg:+.1f}°"
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 48" '
+        f'role="img" aria-label="{label}">'
+        f'<g fill="none" stroke="{_HUD_GREEN}" stroke-width="1.4">'
+        '<rect x="2" y="2" width="124" height="44" fill="#0c100d" fill-opacity=".58"/>'
+        '<path d="M64 2V8M64 40V46M2 24H8M120 24H126"/>'
+        '<rect x="57" y="19" width="14" height="10" opacity=".55"/>'
+        '</g>'
+        f'<circle data-role="gimbal-point" cx="{x:.2f}" cy="{y:.2f}" r="2.6" '
+        f'fill="{_HUD_GREEN}" stroke="#080c09" stroke-width="1"/>'
+        '</svg>'
+    )
+
+
+_RETICLE_GEOMETRY = '<path d="M62 60H98M80 42V78"/>'
 
 TACTICAL_RETICLE = (
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120" '
@@ -91,6 +106,6 @@ TACTICAL_RETICLE = (
     'stroke-linejoin="miter">'
     '<g stroke="#080c09" stroke-width="3.2" opacity=".95">'
     + _RETICLE_GEOMETRY + '</g>'
-    '<g stroke="#f0f3df" stroke-width="1.1">'
+    f'<g stroke="{_HUD_GREEN}" stroke-width="1.5">'
     + _RETICLE_GEOMETRY + '</g></svg>'
 )

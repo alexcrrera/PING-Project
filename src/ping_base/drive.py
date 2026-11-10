@@ -5,7 +5,7 @@ from math import isfinite
 from time import monotonic
 from typing import Callable
 
-from .controller import Button, ControllerState
+from .controller import ControllerState
 
 
 @dataclass(frozen=True)
@@ -70,8 +70,8 @@ class DriveInputRouter:
         if self.mode == "dualshock":
             if not controller.connected:
                 return DriveCommand(source="dualshock")
-            return DriveCommand(-controller.left_stick.y, controller.left_stick.x,
-                                controller.buttons[Button.CROSS].held or controller.l2 > .1,
+            return DriveCommand(controller.r2, controller.left_stick.x,
+                                controller.l2 > .1,
                                 "dualshock")
         if not isfinite(now) or now - self._received_at >= self.timeout:
             self.clear()

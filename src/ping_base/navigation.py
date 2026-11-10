@@ -21,6 +21,9 @@ MAP_SPAN_M = 620.0
 MAP_ZOOM_LEVELS = (.5, 1, 2, 4, 8)
 _SCALE = 400 / MAP_SPAN_M
 _BASE_CENTER = (-35.0, 130.0)
+_MAP_BACKGROUND = '#0c1219'
+_ROVER_COLOR = '#a7ff64'
+_CAMERA_COLOR = '#ffc166'
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,21 +85,21 @@ def _basemap() -> str:
                         angle += 180
                     named[feature['name']] = (score, x, y, angle)
     output = []
-    for kind, width, color in (('major', 8, '#687362'), ('minor', 4, '#515f50'), ('path', 1.4, '#394b3b')):
+    for kind, width, color in (('major', 8, '#a8b7c4'), ('minor', 4, '#667e92'), ('path', 1.8, '#567082')):
         output.append(f'<path d="{"".join(roads[kind])}" stroke="{color}" stroke-width="{width}" '
                       'fill="none" stroke-linecap="round" stroke-linejoin="round"/>')
-    output.append(f'<path d="{"".join(buildings)}" fill="#252e27" stroke="#4c5949" '
+    output.append(f'<path d="{"".join(buildings)}" fill="#1d2a37" stroke="#53697d" '
                   'stroke-width="1.2" stroke-linejoin="round"/>')
     for name, (_, x, y, angle) in named.items():
         label = name.upper().replace('RUE DES FOSSÉS SAINT-BERNARD', 'R. FOSSÉS ST-BERNARD')
         output.append(f'<text transform="translate({x:.1f} {-y - 5:.1f}) rotate({angle:.1f})" '
-                      'fill="#a0a994" font-size="13" text-anchor="middle" '
-                      'stroke="#131a15" stroke-width="3" paint-order="stroke">'
+                      'fill="#e0ebf4" font-size="13" text-anchor="middle" '
+                      f'stroke="{_MAP_BACKGROUND}" stroke-width="3" paint-order="stroke">'
                       f'{escape(label)}</text>')
     for name, (x, y) in landmarks.items():
         label = 'ZAMANSKY' if name == 'Tour Zamansky' else 'ATRIUM'
-        output.append(f'<text x="{x:.1f}" y="{-y - 12:.1f}" fill="#b5bda7" '
-                      'font-size="12" text-anchor="middle" stroke="#131a15" '
+        output.append(f'<text x="{x:.1f}" y="{-y - 12:.1f}" fill="#c1d6e8" '
+                      f'font-size="12" text-anchor="middle" stroke="{_MAP_BACKGROUND}" '
                       f'stroke-width="3" paint-order="stroke">{label}</text>')
     return ''.join(output)
 
@@ -124,8 +127,8 @@ def campus_map(x_m: float | None, y_m: float | None, heading_deg: float | None,
     tx, ty = 200 - cx * scale, 200 + cy * scale
     world_transform = f'translate({tx:.2f} {ty:.2f}) scale({scale:.6f})'
     grid = ''.join(f'M{p} 0V400M0 {p}H400' for p in range(0, 401, 40))
-    content = ('<rect width="400" height="400" fill="#121913"/>'
-               f'<path d="{grid}" stroke="#647557" opacity=".12" stroke-width=".7"/>'
+    content = (f'<rect width="400" height="400" fill="{_MAP_BACKGROUND}"/>'
+               f'<path d="{grid}" stroke="#69859e" opacity=".3" stroke-width=".7"/>'
                f'<g data-role="basemap" transform="{world_transform}">{_basemap()}</g>')
     if valid:
         clean_trail = [point for point in trail[-256:]
@@ -133,19 +136,20 @@ def campus_map(x_m: float | None, y_m: float | None, heading_deg: float | None,
                        and all(_finite(value) for value in point)]
         if len(clean_trail) > 1:
             content += (f'<path data-role="trail" transform="{world_transform}" d="{_path(clean_trail)}" '
-                        'fill="none" stroke="#abb79a" stroke-width="2" stroke-dasharray="4 5" opacity=".65"/>')
+                        'fill="none" stroke="#65ddff" stroke-width="2.5" stroke-dasharray="4 5" opacity=".9"/>')
         px, py = tx + x_m * scale, ty - y_m * scale
         if _finite(camera_heading_deg):
             content += (f'<g data-role="camera" transform="translate({px:.2f} {py:.2f}) rotate({camera_heading_deg % 360:.2f})" '
-                        'stroke="#d1ac61" stroke-linejoin="round">'
-                        '<path d="M0 0L-25 -48A54 54 0 0 1 25 -48Z" fill="#d1ac61" fill-opacity=".12" '
-                        'stroke-width="1.1"/><path d="M0 -10V-46M-4 -40L0 -47L4 -40" stroke-width="1.8"/></g>')
+                        f'stroke="{_CAMERA_COLOR}" stroke-linejoin="round">'
+                        f'<path d="M0 0L-25 -48A54 54 0 0 1 25 -48Z" fill="{_CAMERA_COLOR}" fill-opacity=".16" '
+                        'stroke-width="1.5"/><path d="M0 -10V-46M-4 -40L0 -47L4 -40" stroke-width="1.8"/></g>')
         if _finite(heading_deg):
             content += (f'<g data-role="vehicle" transform="translate({px:.2f} {py:.2f}) rotate({heading_deg % 360:.2f})">'
-                        '<circle r="14" fill="#10170f" fill-opacity=".8" stroke="#e8e7df" stroke-opacity=".3"/>'
-                        '<path d="M0 -11L8 9L0 5L-8 9Z" fill="#f0f0df" stroke="#111910" stroke-width="1.5"/></g>')
+                        f'<circle r="14" fill="{_MAP_BACKGROUND}" stroke="{_ROVER_COLOR}" stroke-opacity=".75"/>'
+                        f'<path d="M0 -11L8 9L0 5L-8 9Z" fill="{_ROVER_COLOR}" '
+                        f'stroke="{_MAP_BACKGROUND}" stroke-width="1.5"/></g>')
         else:
-            content += f'<circle data-role="position" cx="{px:.2f}" cy="{py:.2f}" r="5" fill="#e8e7df"/>'
+            content += f'<circle data-role="position" cx="{px:.2f}" cy="{py:.2f}" r="5" fill="{_ROVER_COLOR}"/>'
         if x_m < -400 or x_m > 400 or y_m < -230 or y_m > 590:
             content += ('<rect x="85" y="343" width="230" height="20" fill="#101610" fill-opacity=".88"/>'
                         '<text x="200" y="357" fill="#b5bda7" font-size="9" text-anchor="middle">OUTSIDE CACHED CAMPUS AREA</text>')

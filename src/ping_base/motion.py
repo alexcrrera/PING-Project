@@ -74,6 +74,12 @@ class VirtualRover:
         """Clear pending input and apply the virtual brake."""
         self.set_command(0.0, 0.0, brake=True)
 
+    @property
+    def wheel_thrust(self) -> tuple[float, float]:
+        """Signed left and right drive demand relative to full straight drive."""
+        left, right = self._wheel_target()
+        return left / self.MAX_SPEED_MPS, right / self.MAX_SPEED_MPS
+
     @staticmethod
     def _approach(current: float, target: float, delta: float) -> float:
         if current < target:

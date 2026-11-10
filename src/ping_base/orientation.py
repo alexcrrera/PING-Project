@@ -16,8 +16,8 @@ def _number(value: float | None) -> float | None:
     return float(value) if isfinite(value) else None
 
 
-def _svg(label: str, content: str) -> str:
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" '
+def _svg(label: str, content: str, *, view_box: str = "0 0 120 120") -> str:
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{view_box}" '
             f'role="img" aria-label="{escape(label, quote=True)}" fill="none">'
             f'<title>{escape(label)}</title>{content}</svg>')
 
@@ -98,6 +98,44 @@ def _top_rover() -> str:
             '<path d="M56 45L60 39L64 45" stroke-width="2"/>'
             f'<circle cx="60" cy="60" r="4" fill="{_DARK}"/>'
             '</g>')
+
+
+def wheel_slip_indicator(slips: tuple[float, float, float, float] | None, red_at: int,
+                         thrust: tuple[float, float] | None = None) -> str:
+    """Body-relative view for fixed wheels, with red at or above the slip threshold."""
+    wheels = []
+    readings = []
+    descriptions = []
+    for index, name in enumerate(('Front left', 'Front right', 'Rear left', 'Rear right')):
+        if slips is None:
+            color, reading, description = _MUTED, '—', 'unavailable'
+        else:
+            slip = slips[index]
+            severity = min(1.0, slip * 100 / red_at) if red_at else float(slip > 0)
+            color = f'hsl({120 * (1 - severity):.1f}, 75%, 66%)'
+            reading = description = f'{slip:.0%}'
+        descriptions.append(f'{name} {description}')
+        side = index % 2
+        center_y = 50 + 24 * (index // 2)
+        slip_x = (41, 79)[side]
+        wheels.append(f'<rect x="{slip_x - 6}" y="{center_y - 9}" width="12" height="18" rx="2" '
+                      f'fill="{color}" fill-opacity=".16" stroke="{color}" stroke-width=".75"/>')
+        readings.append(f'<text x="{slip_x}" y="{center_y + 1.5}" '
+                        f'font-size="4.4" text-anchor="middle">{reading}</text>')
+        value = (f'{thrust[side]:+.0%}' if thrust[side] else '0%') if thrust is not None else '—'
+        x, anchor = ((31, 'end'), (89, 'start'))[side]
+        readings.append(f'<text x="{x}" y="{center_y + 1.8}" fill="#bdc3b7" text-anchor="{anchor}">{value}</text>')
+    thrust_label = 'Thrust unavailable.' if thrust is None else f'Left thrust {thrust[0]:+.0%}, right thrust {thrust[1]:+.0%}.'
+    chassis = ('<g stroke="#8e998b" stroke-width=".8" stroke-linejoin="round">'
+               '<path d="M47 50H73M47 74H73" stroke="#616b60"/>'
+               '<path d="M50 43L54 38H66L70 43V80L66 84H54L50 80Z" fill="#202620"/>'
+               '<path d="M54 47H66V77H54Z" stroke="#566155"/>'
+               '<path d="M57 45L60 42L63 45"/>'
+               '<circle cx="60" cy="60" r="3.5"/></g>')
+    return _svg(f'Wheel slip, front up. {". ".join(descriptions)}. Red threshold {red_at}%. {thrust_label}',
+                chassis + ''.join(wheels) +
+                f'<g fill="{_WHITE}" font-family="Arial,sans-serif" font-size="6">{"".join(readings)}</g>',
+                view_box="4 34 112 52")
 
 
 def heading_indicator(heading: float | None, camera_heading: float | None) -> str:

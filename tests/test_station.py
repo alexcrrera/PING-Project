@@ -7,9 +7,10 @@ import unittest
 from unittest.mock import patch
 
 from ping_base.cli import main
-from ping_base.controller import Button, ControllerState, PS4Controller, RawInput
+from ping_base.controller import Button, ControllerState, PS4Controller, RawInput, Stick
 from ping_base.gimbal import StabilizationMode
 from ping_base.station import BaseStation, NoController, PS4ControllerService
+from ping_base.telemetry import SimulatedTelemetrySource
 
 
 class FakeService:
@@ -35,6 +36,117 @@ class FakeService:
 
 
 class StationTests(unittest.TestCase):
+    def test_options_toggles_brake_once_and_overrides_held_throttle(self):
+        station = self.make_station()
+        self.telemetry.source = SimulatedTelemetrySource()
+        station.set_drive_mode("dualshock")
+        station.start()
+        model = PS4Controller()
+
+        def tick(*buttons):
+            self.controller.state = model.update(RawInput(
+                connected=True, device_id="pad", r2=1, held=frozenset(buttons)))
+            station.tick()
+
+        tick()
+        self.assertEqual(station.drive_command.throttle, 1)
+        tick(Button.OPTIONS)
+        self.assertTrue(station.brake_latched)
+        self.assertTrue(station.drive_command.brake)
+        self.assertEqual(station.drive_command.throttle, 0)
+        tick(Button.OPTIONS)
+        tick()
+        self.assertTrue(station.brake_latched)
+        tick(Button.OPTIONS)
+        self.assertFalse(station.brake_latched)
+        self.assertEqual(station.drive_command.throttle, 1)
+        station.close()
+
+    def test_controller_camera_actions_are_consumed_once_and_require_dualshock(self):
+        station = self.make_station()
+        self.camera.set_gimbal = lambda pose: None
+        model = PS4Controller(deadzone=0)
+        station.start()
+
+        def tick(*buttons, connected=True):
+            self.controller.state = model.update(RawInput(
+                connected=connected, device_id="pad", held=frozenset(buttons)))
+            station.tick()
+
+        tick()
+        tick(Button.SHARE, Button.RIGHT)
+        self.assertEqual(station.gimbal.stabilization_mode, StabilizationMode.OFF)
+        self.assertEqual(list(station.controller_actions), [])
+        station.set_drive_mode("dualshock")
+        station.tick()
+        self.assertEqual(list(station.controller_actions), [])
+        tick()
+        station.gimbal.nudge(yaw=20, pitch=10)
+        tick(Button.SHARE, Button.CROSS, Button.RIGHT, Button.TRIANGLE)
+        self.assertEqual(station.gimbal.stabilization_mode, StabilizationMode.LOCK)
+        self.assertEqual(station.gimbal.state.pitch_deg, 0)
+        self.assertEqual(station.gimbal.state.yaw_deg, 0)
+        self.assertEqual(list(station.controller_actions), [(1, "camera_zoom_in"), (2, "map_zoom")])
+        station.tick()
+        tick(Button.SHARE, Button.CROSS, Button.RIGHT, Button.TRIANGLE)
+        self.assertEqual(station.controller_action_sequence, 2)
+        self.assertEqual(station.gimbal.stabilization_mode, StabilizationMode.LOCK)
+        tick()
+        tick(Button.LEFT)
+        self.assertEqual(station.controller_actions[-1], (3, "camera_zoom_out"))
+        tick(connected=False)
+        tick(Button.SHARE, Button.RIGHT)
+        self.assertEqual(station.controller_action_sequence, 3)
+        station.close()
+
+    def test_right_stick_pans_and_tilts_and_disconnect_or_mode_switch_stops_it(self):
+        station = self.make_station()
+        self.camera.set_gimbal = lambda pose: None
+        model = PS4Controller(deadzone=0)
+        station.set_drive_mode("dualshock")
+        station.start()
+        tilt = 1.5 / (2 ** .5)  # Radial stick normalization limits a diagonal.
+        with patch("ping_base.station.time.monotonic", return_value=0) as clock:
+            station.gimbal._clock = lambda: clock.return_value
+            self.controller.state = model.update(RawInput(
+                connected=True, device_id="pad", right_stick=Stick(1, -1)))
+            station.tick()
+            clock.return_value = .1
+            station.tick()
+            self.assertAlmostEqual(station.gimbal.state.pitch_deg, tilt)
+            self.assertAlmostEqual(station.gimbal.state.yaw_deg, tilt)
+            self.controller.state = model.update(RawInput())
+            station.tick()
+            clock.return_value = .2
+            station.tick()
+            self.assertAlmostEqual(station.gimbal.state.pitch_deg, tilt)
+            self.assertAlmostEqual(station.gimbal.state.yaw_deg, tilt)
+            self.controller.state = model.update(RawInput(
+                connected=True, device_id="pad", right_stick=Stick(-1, 0)))
+            station.tick()
+            clock.return_value = .3
+            station.tick()
+            self.assertAlmostEqual(station.gimbal.state.pitch_deg, tilt)
+            self.assertAlmostEqual(station.gimbal.state.yaw_deg, tilt - 1.5)
+            station.set_drive_mode("keyboard")
+            clock.return_value = .4
+            station.tick()
+            self.assertAlmostEqual(station.gimbal.state.pitch_deg, tilt)
+            self.assertAlmostEqual(station.gimbal.state.yaw_deg, tilt - 1.5)
+        station.close()
+
+    def test_camera_switch_releases_old_reader_and_keeps_other_services(self):
+        station = self.make_station()
+        station.start()
+        self.events.clear()
+        replacement = FakeService("network camera", self.events)
+        station.replace_camera(replacement)
+        self.assertIs(station.camera, replacement)
+        self.assertEqual(self.events, [("camera", "close"), ("network camera", "start")])
+        station.close()
+        with self.assertRaises(RuntimeError):
+            station.replace_camera(self.camera)
+
     def make_station(self, *, camera_start_error=None, controller_start_error=None,
                      controller_close_error=None, camera_close_error=None):
         self.events = []

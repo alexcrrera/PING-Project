@@ -51,6 +51,27 @@ const count = () => events.filter(event => event.name === 'map_toggle').length;
 
 @unittest.skipUnless(NODE, "Node is optional; required only to execute the browser shortcut bridge")
 class KeyboardMapTests(unittest.TestCase):
+    def test_zoom_keys_do_not_steer_and_shortcuts_do_not_repeat(self):
+        self.run_javascript(r"""
+            for (const [code, name] of [['ArrowRight','camera_zoom_in'],
+                    ['ArrowLeft','camera_zoom_out'], ['Enter','map_zoom'],
+                    ['KeyX','camera_home'], ['KeyZ','camera_stabilization'], ['KeyB','drive_brake_toggle']]) {
+                events.length = 0;
+                press({code});
+                press({code, repeat:true});
+                assert.equal(events.length, 1);
+                assert.equal(events[0].name, name);
+                press({code, target:target('input')});
+                assert.equal(events.length, 1);
+            }
+            events.length = 0;
+            press({code:'KeyA'});
+            assert.equal(events.at(-1).args.steering, -1);
+            press({code:'ArrowRight'});
+            heartbeat();
+            assert.equal(events.at(-1).args.steering, -1);
+        """)
+
     def run_javascript(self, scenario):
         script = HARNESS + "\neval(" + json.dumps(KEYBOARD_SCRIPT) + ");\n" + scenario
         result = subprocess.run([NODE, "-"], input=script, text=True, capture_output=True, timeout=10)

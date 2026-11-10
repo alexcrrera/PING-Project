@@ -43,12 +43,33 @@ groups the filters with their active count and summary. Narrow screens stack
 these panels below the camera, with scrolling so controls remain accessible.
 
 - Select **Keyboard** under **Virtual drive**. Hold **W/S** or **Up/Down** for
-  forward/reverse; **A/D** or **Left/Right** steer, including turning in place.
+  forward/reverse; **A/D** steer, including turning in place.
   Hold **Space** to brake. Click inside the dashboard first if another app has
   keyboard focus. Form fields and connection dialogs do not drive the rover.
-- Select **DualShock** to connect the existing PS4 adapter automatically. The
-  **left stick** drives and steers; **Cross (×)** or **L2** brakes. Connect the
+- Select **DualShock** to connect the existing PS4 adapter automatically.
+  **R2** accelerates, **left stick horizontal** steers, and **L2** brakes. Connect the
   controller by USB/Bluetooth; status shows **WAITING** until it is detected.
+- Basic dashboard bindings:
+
+  | Action | DualShock | Keyboard |
+  | --- | --- | --- |
+  | Accelerate / drive | R2 (analog forward throttle) | W/S or Up/Down (forward/reverse) |
+  | Steer | Left stick horizontal | A/D |
+  | Hold brake | L2 | Space |
+  | Toggle brake | Start / Options | B |
+  | Camera zoom in / out | D-pad Right / Left | Right / Left arrows |
+  | Map open / close | Touchpad click | M |
+  | Camera tilt up / down | Right stick vertical | I/K |
+  | Camera pan left / right | Right stick horizontal | J/L |
+  | Reset camera aim | Cross (×) | X or R |
+  | Cycle stabilization | Share | Z |
+  | Cycle map zoom | Triangle | Enter |
+
+  Camera zoom steps between 1× and 20× without wrapping at the limits; Q retains
+  its existing zoom cycle. Triangle cycles the map zoom levels and wraps
+  to the lowest level. Controller actions require DualShock mode. L2 uses the
+  existing simulated brake; physical ABS control is not implemented.
+
 - Releasing input slows the rover to a stop. Keyboard focus loss, browser
   disconnect, a missing input heartbeat, or controller disconnect apply the
   virtual brake. Input modes are explicit; the two sources are never mixed.
@@ -109,7 +130,7 @@ these panels below the camera, with scrolling so controls remain accessible.
   **Reset** clears every effect and restores the original JPEG. Filter settings
   belong to each browser page, and selected effects remain applied in fullscreen.
   Click the camera after editing filters to resume keyboard shortcuts. All processing stays local.
-- Press **Q** to cycle camera zoom through **1× → 2× → 4× → 1×**. Each press
+- Press **Q** to cycle camera zoom through **1× → 2× → 5× → 12× → 20× → 1×**. Each press
   advances one level; holding the key does not repeat. The current zoom appears
   in the camera overlay, including fullscreen. The shortcut works in either
   drive mode and is ignored while typing or using connection dialogs.
@@ -150,6 +171,28 @@ Disconnected/stale values show `—`; the last model pose and speed history are
 labeled historical. Camera loss covers the last image with an offline message.
 
 ### Connect hardware
+
+For the Raspberry Pi camera, open **Connections**, select **Pi / network camera**,
+and enter `tcp://192.168.68.56:8888` (replace the IP if the Pi's address changes).
+Click **Connect camera / Retry**. Video appears in the existing camera panel,
+with the same filters, zoom and fullscreen controls. Telemetry remains a separate
+source; simulated telemetry is still simulated, and physical servo control is
+not connected. Camera selection is shared between dashboard tabs and lasts
+until the app exits. Select **Virtual terrain** to return to the demo.
+
+First close VLC and run this on the Pi through SSH:
+
+```bash
+rpicam-vid -t 0 -n --width 1280 --height 720 --framerate 30 --codec h264 --bitrate 3000000 --inline --intra 15 --listen -o tcp://0.0.0.0:8888
+```
+
+This Pi command accepts one viewer. Disconnecting can stop it with a socket
+error; restart it before clicking **Connect camera / Retry** again. Use `tcp://`
+in the GUI, rather than VLC's `tcp/h264://` address. The network capture worker
+continuously drains incoming frames and publishes a bounded latest-frame queue
+so the display rate does not cause an increasing video backlog. Display freshness
+is measured on this computer, not a timestamp from the Pi; it does not measure
+end-to-end camera latency.
 
 ```powershell
 # Receive USB/radio telemetry at the project's planned 57600 baud:

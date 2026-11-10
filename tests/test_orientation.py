@@ -5,7 +5,7 @@ import re
 import unittest
 from xml.etree import ElementTree as ET
 
-from ping_base.orientation import heading_indicator, pitch_indicator, roll_indicator
+from ping_base.orientation import heading_indicator, pitch_indicator, roll_indicator, wheel_slip_indicator
 
 
 def group(svg, role):
@@ -19,6 +19,30 @@ def rotation(svg, role):
 
 
 class OrientationTests(unittest.TestCase):
+    def test_slip_colors_follow_fixed_wheel_positions_and_threshold(self):
+        root = ET.fromstring(wheel_slip_indicator((0, .15, .3, .8), 30, (1, -1)))
+        wheels = root.findall('.//{*}rect')
+        self.assertEqual([(wheel.get('x'), wheel.get('y')) for wheel in wheels],
+                         [('35', '41'), ('73', '41'), ('35', '65'), ('73', '65')])
+        self.assertEqual([wheel.get('fill') for wheel in wheels],
+                         ['hsl(120.0, 75%, 66%)', 'hsl(60.0, 75%, 66%)',
+                          'hsl(0.0, 75%, 66%)', 'hsl(0.0, 75%, 66%)'])
+        self.assertFalse(any('transform' in item.attrib for item in root.iter()))
+        self.assertIn('Front right 15%', root.attrib['aria-label'])
+        self.assertEqual([(label.get('x'), label.text) for label in root.findall('.//{*}text')],
+                         [('41', '0%'), ('31', '+100%'), ('79', '15%'), ('89', '-100%'),
+                          ('41', '30%'), ('31', '+100%'), ('79', '80%'), ('89', '-100%')])
+
+    def test_slip_threshold_endpoints_and_missing_data(self):
+        zero = wheel_slip_indicator((0, .01, .1, 1), 0)
+        full = wheel_slip_indicator((0, .01, .1, 1), 100)
+        self.assertEqual(zero.count('fill="hsl(0.0,'), 3)
+        self.assertEqual(full.count('fill="hsl(0.0,'), 1)
+        self.assertIn('hsl(120.0,', zero)
+        missing = wheel_slip_indicator(None, 30)
+        self.assertNotIn('hsl(', missing)
+        self.assertIn('Front left unavailable', missing)
+
     def test_indicators_are_accessible_self_contained_svg(self):
         for svg in (pitch_indicator(7.5), roll_indicator(-3), heading_indicator(95, 310)):
             root = ET.fromstring(svg)

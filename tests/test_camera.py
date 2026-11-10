@@ -6,11 +6,11 @@ import threading
 import time
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from PIL import Image
 
-from ping_base.camera import OpenCVCameraSource, SimulatedCameraSource, _LatestFrameSource
+from ping_base.camera import OpenCVCameraSource, SimulatedCameraSource, _LatestFrameSource, _opencv_capture_loop
 from ping_base.gimbal import GimbalPose, StabilizationMode, VirtualGimbal
 
 
@@ -24,6 +24,30 @@ def wait_until(predicate, timeout=2):
 
 
 class CameraTests(unittest.TestCase):
+    def test_network_capture_drains_frames_without_sleeping_at_display_rate(self):
+        capture = Mock()
+        capture.read.return_value = (True, SimpleNamespace(shape=(720, 1280, 3)))
+        encoded = Mock()
+        encoded.tobytes.return_value = b"jpeg"
+        cv = SimpleNamespace(
+            VideoCapture=Mock(return_value=capture), CAP_FFMPEG=1900,
+            CAP_PROP_OPEN_TIMEOUT_MSEC=53, CAP_PROP_READ_TIMEOUT_MSEC=54,
+            CAP_PROP_BUFFERSIZE=38, IMWRITE_JPEG_QUALITY=1,
+            imencode=Mock(return_value=(True, encoded)),
+        )
+        stop = Mock()
+        stop.is_set.side_effect = [False] * 6 + [True]
+        messages = queue.Queue(maxsize=2)
+        with patch.dict("sys.modules", {"cv2": cv}), patch.dict("os.environ", {}), patch(
+                "ping_base.camera.time.monotonic", side_effect=[0, .01, .02, .03, .10, .11]):
+            _opencv_capture_loop("tcp://192.168.68.56:8888", 960, 540, 12, messages, stop)
+        self.assertEqual(capture.read.call_count, 6)
+        self.assertEqual(cv.imencode.call_count, 2)
+        stop.wait.assert_not_called()
+        capture.release.assert_called_once()
+        cv.VideoCapture.assert_called_once_with("tcp://192.168.68.56:8888", 1900, [53, 5000, 54, 3000])
+        self.assertEqual(messages.get_nowait()[2:4], (1280, 720))
+
     @staticmethod
     def motion(**values):
         return SimpleNamespace(x_m=values.get("x_m", 0), y_m=values.get("y_m", 0),

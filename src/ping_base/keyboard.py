@@ -4,7 +4,7 @@ KEYBOARD_SCRIPT = r"""
 (() => {
     if (window.pingKeyboardCleanup) window.pingKeyboardCleanup();
     const keys = new Set();
-    const codes = new Set(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space']);
+    const codes = new Set(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','Space']);
     const gimbalKeys = new Set();
     const gimbalCodes = new Set(['KeyI','KeyJ','KeyK','KeyL']);
     const abort = new AbortController();
@@ -37,7 +37,7 @@ KEYBOARD_SCRIPT = r"""
     const send = () => {
         const has = (...names) => names.some(name => keys.has(name)) ? 1 : 0;
         emit({throttle:has('KeyW','ArrowUp')-has('KeyS','ArrowDown'),
-              steering:has('KeyD','ArrowRight')-has('KeyA','ArrowLeft'), brake:keys.has('Space')});
+              steering:has('KeyD')-has('KeyA'), brake:keys.has('Space')});
         held = keys.size > 0;
     };
     const sendGimbal = () => {
@@ -46,6 +46,7 @@ KEYBOARD_SCRIPT = r"""
         gimbalHeld = gimbalKeys.size > 0;
     };
     document.addEventListener('keydown', event => {
+        if (['Space','Enter'].includes(event.code) && event.target?.closest?.('.brake-toggle')) { clear(); return; }
         if (event.code === 'Escape' && mapOpen()) {
             if (!shortcutsEnabled() || event.ctrlKey || event.altKey || event.metaKey || editable(event.target)) return;
             event.preventDefault();
@@ -53,15 +54,20 @@ KEYBOARD_SCRIPT = r"""
             if (!event.repeat) emitCamera('map_close');
             return;
         }
-        if (event.code === 'KeyQ' || event.code === 'KeyM' || event.code === 'KeyR' || event.code === 'KeyZ' || gimbalCodes.has(event.code)) {
+        const viewShortcut = ['KeyQ','KeyM','ArrowLeft','ArrowRight','Enter','KeyB'].includes(event.code);
+        if (viewShortcut || event.code === 'KeyR' || event.code === 'KeyX' || event.code === 'KeyZ' || gimbalCodes.has(event.code)) {
             if (!shortcutsEnabled() || event.ctrlKey || event.altKey || event.metaKey || editable(event.target)) return;
-            if (event.code !== 'KeyQ' && event.code !== 'KeyM' && !gimbalEnabled()) return;
+            if (!viewShortcut && !gimbalEnabled()) return;
             event.preventDefault();
             event.stopPropagation();
             if (event.repeat) return;
             if (event.code === 'KeyQ') emitCamera('camera_zoom');
+            else if (event.code === 'KeyB') emitCamera('drive_brake_toggle');
+            else if (event.code === 'ArrowRight') emitCamera('camera_zoom_in');
+            else if (event.code === 'ArrowLeft') emitCamera('camera_zoom_out');
+            else if (event.code === 'Enter') emitCamera('map_zoom');
             else if (event.code === 'KeyM') emitCamera('map_toggle');
-            else if (event.code === 'KeyR') { clearGimbal(); emitCamera('camera_home'); }
+            else if (event.code === 'KeyR' || event.code === 'KeyX') { clearGimbal(); emitCamera('camera_home'); }
             else if (event.code === 'KeyZ') emitCamera('camera_stabilization');
             else { gimbalKeys.add(event.code); sendGimbal(); }
             return;

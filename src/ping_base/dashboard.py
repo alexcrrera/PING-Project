@@ -13,12 +13,13 @@ from fastapi import Query, Response
 from nicegui import app, context, ui
 
 from .fonts import register_fonts
+from .camera import OpenCVCameraSource, SimulatedCameraSource
 from .camera_filters import CameraFilterSettings, CameraFrameProcessor, FILTER_LABELS, VISION_EFFECTS
 from .gimbal import StabilizationMode
-from .hud import TACTICAL_RETICLE, heading_tape, range_readout
+from .hud import TACTICAL_RETICLE, gimbal_indicator, heading_tape, range_readout
 from .keyboard import KEYBOARD_SCRIPT
 from .navigation import MAP_ZOOM_LEVELS, campus_map, simulated_position
-from .orientation import heading_indicator, pitch_indicator, roll_indicator
+from .orientation import heading_indicator, pitch_indicator, roll_indicator, wheel_slip_indicator
 from .rover import RoverView
 from .station import BaseStation
 from .telemetry import SerialTelemetrySource, SimulatedTelemetrySource
@@ -30,7 +31,7 @@ ICONS = {
     "rover": '<path d="m3 8 9-5 9 5v9l-9 5-9-5zM3 8l9 5 9-5M12 13v9"/>',
     "telemetry": '<path d="M3 13h4l3-8 4 15 3-9h4"/>',
 }
-CAMERA_ZOOM_LEVELS = (1, 2, 4)
+CAMERA_ZOOM_LEVELS = (1, 2, 5, 12, 20)
 STABILIZATION_LABELS = {
     StabilizationMode.OFF: ("OFF", "Follows rover tilt and turns"),
     StabilizationMode.LOCK: ("LOCK", "Heading + pitch locked · Roll level"),
@@ -94,6 +95,7 @@ class Dashboard:
         self.map_zoom_index = MAP_ZOOM_LEVELS.index(1)
         self.map_zoom_controls = []
         self._map_toggle_sequence = station.map_toggle_sequence
+        self._controller_action_sequence = station.controller_action_sequence
         self.camera_zoom_index = 0
         ui.colors(primary="#d2d6b9", secondary="#999b91", accent="#d2d6b9")
         ui.add_css(font_css + "\n" + CSS)
@@ -102,6 +104,10 @@ class Dashboard:
         self.input_guard = ui.element("div").props('id="virtual-drive-input" data-mode="keyboard" data-enabled="false"').style("display:none")
         ui.on("virtual_drive", self._drive_event)
         ui.on("camera_zoom", self.cycle_camera_zoom)
+        ui.on("camera_zoom_in", lambda: self.step_camera_zoom(1))
+        ui.on("camera_zoom_out", lambda: self.step_camera_zoom(-1))
+        ui.on("map_zoom", self.cycle_map_zoom)
+        ui.on("drive_brake_toggle", self.toggle_brake)
         ui.on("camera_gimbal", self._gimbal_event)
         ui.on("camera_home", self.reset_gimbal)
         ui.on("camera_stabilization", self.toggle_stabilization)
@@ -179,12 +185,12 @@ class Dashboard:
                         self.stabilization_marker = ui.button("STAB OFF · Z", on_click=self.toggle_stabilization).props('flat dense no-caps aria-label="Cycle camera stabilization mode"').classes("stabilization-marker")
                         self._label("camera_time", "", "camera-stamp")
                 self.compass = ui.html(heading_tape(None), sanitize=False).classes("camera-compass")
+                self.horizon = ui.html("", sanitize=False).classes("artificial-horizon")
+                self.horizon.set_visibility(False)
                 self.crosshair = ui.html(TACTICAL_RETICLE, sanitize=False).classes("crosshair")
                 with ui.element("div").classes("rangefinder-overlay").props('role="status" aria-label="Camera center rangefinder"'):
                     self._label("rangefinder_mode", "LRF / SIM · 10 M", "rangefinder-label")
                     self._label("overlay_range", "---- m", "rangefinder-value")
-                self.horizon = ui.html("", sanitize=False).classes("artificial-horizon")
-                self.horizon.set_visibility(False)
                 with ui.element("div").classes("gimbal-tools") as self.gimbal_controls:
                     with ui.element("div").classes("gimbal-buttons"):
                         for icon, label, yaw, pitch, shortcut in (
@@ -206,12 +212,13 @@ class Dashboard:
                                 with ui.element("div"):
                                     ui.label(name).classes("eyebrow")
                                     self._label(key, "—", "overlay-value")
-                    self._label("camera_zoom", "1× · Q ZOOM", "eyebrow")
+                    self.gimbal_view = ui.html(gimbal_indicator(self.station.gimbal.state), sanitize=False).classes("gimbal-indicator")
+                    self._label("camera_zoom", "1× · ← / → ZOOM · Q CYCLE", "eyebrow")
                 self.camera_empty = ui.label("Starting camera…").classes("camera-empty")
                 self._expanded_map()
             with ui.element("div").classes("camera-footer"):
                 self._label("camera_status", "VIRTUAL TERRAIN / TEST SOURCE")
-                self._label("gimbal_hint", "I/K TILT · J/L PAN · R HOME")
+                self._label("gimbal_hint", "RIGHT STICK / IJKL AIM · R / × HOME")
 
     def _tools_sidebar(self) -> None:
         with ui.element("aside").classes("panel tools-sidebar").props('id="camera-tools" aria-label="Camera tools"'):
@@ -335,6 +342,11 @@ class Dashboard:
             with ui.element("div").classes("pose-body"):
                 self.rover = RoverView(background_color="#191a18", height=240)
                 self.rover.scene.classes("rover-scene")
+                with ui.element("div").classes("orientation-dial wheel-slip-panel").props('role="group" aria-label="Top-down wheel slip"'):
+                    ui.label("WHEEL SLIP / THRUST").classes("eyebrow")
+                    self.slip_view = ui.html(wheel_slip_indicator(None, 30), sanitize=False).classes("orientation-svg")
+                    self.slip_threshold = ui.slider(min=0, max=100, step=1, value=30).props('dense aria-label="Red wheel slip threshold (%)"')
+                    self._label("slip_threshold", classes="orientation-caption")
                 with ui.element("div").classes("orientation-dials").props('role="group" aria-label="Vehicle pitch, roll and north-up heading"'):
                     self.orientation_views = {}
                     for key, name, caption, render in (
@@ -416,11 +428,24 @@ class Dashboard:
                     self._label("left_stick", "L  +0.00 / +0.00", "axis-readout")
                     self._label("right_stick", "R  +0.00 / +0.00", "axis-readout")
                 self._label("drive_command", "Throttle +0.00 / Turn +0.00", "control-hint")
-                self._label("drive_hint", "WASD / arrows · Space brake", "control-hint")
+                self.brake_button = ui.button("BRAKE OFF", on_click=self.toggle_brake).props('outline dense no-caps aria-pressed="false"').classes("brake-toggle")
+                self._label("drive_hint", "W/S or ↑/↓ drive · A/D steer · Space brake", "control-hint")
+                ui.label("←/→ camera zoom · M / Touchpad map · Enter / △ map zoom").classes("control-hint")
+                ui.label("× / X / R camera reset · Share / Z stabilization").classes("control-hint")
 
     def _settings(self) -> None:
         with ui.dialog() as self.dialog, ui.card().classes("settings-card"):
             ui.label("CONNECTIONS").classes("eyebrow")
+            ui.html("<h2>Camera source</h2>", sanitize=False)
+            self.camera_select = ui.select({"simulation": "Virtual terrain", "network": "Pi / network camera", "usb": "USB camera"},
+                                           value="simulation", label="Camera").props("outlined dense")
+            self.camera_address = ui.input("Stream address", value="tcp://192.168.68.56:8888").props("outlined dense").classes("w-full")
+            self.camera_address.bind_visibility_from(self.camera_select, "value", backward=lambda value: value == "network")
+            self.camera_index = ui.number("USB camera index", value=0, min=0, precision=0).props("outlined dense")
+            self.camera_index.bind_visibility_from(self.camera_select, "value", backward=lambda value: value == "usb")
+            ui.label("Close VLC before connecting. If the Pi stream stops, restart it on the Pi and reconnect here. Camera selection is shared by all dashboard tabs.").classes("dialog-note")
+            ui.button("Connect camera / Retry", icon="videocam", on_click=self.apply_camera).props("outline")
+            ui.separator()
             ui.html("<h2>Telemetry source</h2>", sanitize=False)
             ui.label("Switch receivers while keeping the same dashboard. USB mode starts waiting for a valid packet.").classes("dialog-note")
             self.source_select = ui.select({"simulation": "Virtual robot", "serial": "USB / serial"}, value="simulation", label="Source").props("outlined dense")
@@ -428,7 +453,7 @@ class Dashboard:
             self.baud_input = ui.number("Baud rate", value=57600, min=1, precision=0).props("outlined dense")
             self.port_hint = ui.label("").classes("dialog-note")
             ui.button("Scan USB ports", icon="refresh", on_click=self.scan_ports).props("flat dense")
-            ui.label("Serial input uses the provisional JSON-lines contract in the project documentation. Camera selection and PS4 input are configured at startup.").classes("dialog-note")
+            ui.label("Serial input uses the provisional JSON-lines contract in the project documentation.").classes("dialog-note")
             self.font_note = ui.label("Suisse Light + Medium / local fonts" if self.has_suisse else "Suisse not found / use --font-dir to select its folder").classes("subtext")
             with ui.element("div").classes("dialog-actions"):
                 ui.button("Cancel", on_click=self.dialog.close).props("flat")
@@ -441,6 +466,13 @@ class Dashboard:
 
     def open_settings(self) -> None:
         self.station.stop_drive()
+        camera = self.station.camera
+        device = getattr(camera, "device", None)
+        self.camera_select.set_value("simulation" if camera.simulated else "usb" if isinstance(device, int) else "network")
+        if isinstance(device, str):
+            self.camera_address.set_value(device)
+        elif isinstance(device, int):
+            self.camera_index.set_value(device)
         source = self.station.telemetry.source
         self.source_select.set_value("simulation" if isinstance(source, SimulatedTelemetrySource) else "serial")
         if isinstance(source, SerialTelemetrySource):
@@ -448,6 +480,27 @@ class Dashboard:
             self.baud_input.set_value(source.baudrate)
         self.dialog.open()
         self.scan_ports()
+
+    def apply_camera(self) -> None:
+        kind = self.camera_select.value
+        if kind == "network":
+            address = (self.camera_address.value or "").strip()
+            if not address.startswith(("tcp://", "rtsp://", "http://", "https://", "udp://")):
+                ui.notify("Enter a stream address such as tcp://192.168.68.56:8888")
+                return
+            camera = OpenCVCameraSource(address, fps=20)
+        elif kind == "usb":
+            index = self.camera_index.value
+            if index is None or not math.isfinite(index) or index < 0 or index != int(index):
+                ui.notify("Enter a nonnegative whole-number camera index.")
+                return
+            camera = OpenCVCameraSource(int(index))
+        else:
+            camera = SimulatedCameraSource()
+        self.station.replace_camera(camera)
+        self._last_camera = -1
+        self.dialog.close()
+        self.refresh()
 
     def apply_source(self) -> None:
         if self.source_select.value == "serial":
@@ -481,15 +534,25 @@ class Dashboard:
             self.station.drive.keyboard(self.client.id, payload.get("throttle", 0),
                                         payload.get("steering", 0), payload.get("brake", False))
 
+    def toggle_brake(self) -> None:
+        self.station.toggle_brake()
+        self.refresh()
+
     def toggle_reticle(self) -> None:
         self.reticle_visible = not self.reticle_visible
         self.crosshair.set_visibility(self.reticle_visible)
 
     def cycle_camera_zoom(self) -> None:
-        self.camera_zoom_index = (self.camera_zoom_index + 1) % len(CAMERA_ZOOM_LEVELS)
+        self._set_camera_zoom_index((self.camera_zoom_index + 1) % len(CAMERA_ZOOM_LEVELS))
+
+    def step_camera_zoom(self, step: int) -> None:
+        self._set_camera_zoom_index(max(0, min(len(CAMERA_ZOOM_LEVELS) - 1, self.camera_zoom_index + step)))
+
+    def _set_camera_zoom_index(self, index: int) -> None:
+        self.camera_zoom_index = index
         zoom = CAMERA_ZOOM_LEVELS[self.camera_zoom_index]
         self.camera_image.style(f"transform:scale({zoom})")
-        self._text("camera_zoom", f"{zoom}× · Q ZOOM")
+        self._text("camera_zoom", f"{zoom}× · ← / → ZOOM · Q CYCLE")
 
     @property
     def gimbal_available(self) -> bool:
@@ -554,6 +617,9 @@ class Dashboard:
     def reset_map_zoom(self) -> None:
         self._set_map_zoom_index(MAP_ZOOM_LEVELS.index(1))
 
+    def cycle_map_zoom(self) -> None:
+        self._set_map_zoom_index((self.map_zoom_index + 1) % len(MAP_ZOOM_LEVELS))
+
     def _map_wheel(self, event) -> None:
         delta = event.args.get("deltaY") if isinstance(event.args, dict) else None
         if isinstance(delta, (int, float)) and not isinstance(delta, bool) and math.isfinite(delta) and delta:
@@ -593,6 +659,16 @@ class Dashboard:
         simulated = isinstance(source, SimulatedTelemetrySource)
         paused = simulated and source.paused
         now = time.monotonic()
+        actions = [(sequence, action) for sequence, action in self.station.controller_actions
+                   if sequence > self._controller_action_sequence]
+        self._controller_action_sequence = self.station.controller_action_sequence
+        for _, action in actions:
+            if action == "camera_zoom_in":
+                self.step_camera_zoom(1)
+            elif action == "camera_zoom_out":
+                self.step_camera_zoom(-1)
+            elif action == "map_zoom":
+                self.cycle_map_zoom()
         sequence = self.station.map_toggle_sequence
         if sequence != self._map_toggle_sequence:
             if (sequence - self._map_toggle_sequence) % 2:
@@ -600,7 +676,8 @@ class Dashboard:
             self._map_toggle_sequence = sequence
         self.input_guard.props(f'data-mode="{self.station.drive.mode}" data-enabled="{str(self.station.virtual_driving).lower()}" data-gimbal="{str(self.gimbal_available).lower()}" data-map-open="{str(self.map_expanded).lower()}"')
         self.gimbal_controls.set_visibility(self.gimbal_available)
-        self._text("gimbal_hint", "I/K TILT · J/L PAN · R HOME" if self.gimbal_available else "FORWARD VIEW")
+        self.gimbal_view.set_visibility(self.gimbal_available)
+        self._text("gimbal_hint", "RIGHT STICK / IJKL AIM · R / × HOME" if self.gimbal_available else "FORWARD VIEW")
         gimbal = self.station.gimbal.state
         mode = self.station.gimbal.stabilization_mode if self.gimbal_available else StabilizationMode.OFF
         label, detail = STABILIZATION_LABELS[mode]
@@ -615,6 +692,8 @@ class Dashboard:
         self._text("stabilization_detail", "Available with virtual camera" if not self.gimbal_available else
                    detail + (" · Compensation limit reached" if limited else ""))
         self._text("gimbal_angles", f"PAN {gimbal.yaw_deg:+.0f}° / TILT {gimbal.pitch_deg:+.0f}°")
+        if self.gimbal_available:
+            self.gimbal_view.set_content(gimbal_indicator(gimbal))
         self.rover.update_gimbal(gimbal)
         if self.drive_toggle.value != self.station.drive.mode:
             self.drive_toggle.set_value(self.station.drive.mode)
@@ -667,6 +746,10 @@ class Dashboard:
                                  simulated=simulated, camera_heading=orientation_camera)
         self.battery_fill.style(f"width:{sample.battery_percent if sample else 0:.1f}%")
         wheels = sample.wheel_slip if sample else None
+        red_at = int(self.slip_threshold.value)
+        thrust = self.station.virtual_rover.wheel_thrust if simulated else None
+        self.slip_view.set_content(wheel_slip_indicator(wheels, red_at, thrust))
+        self._text("slip_threshold", f"RED AT {red_at}%" if red_at else "RED ABOVE 0%")
         rpms = sample.wheel_rpm if sample else None
         currents = sample.motor_current_a if sample else None
         for i, fill in enumerate(self.wheel_fills):
@@ -712,7 +795,7 @@ class Dashboard:
                 self.horizon.set_content(horizon_overlay(*attitude))
                 self._last_horizon = attitude
         self._text("camera_time", datetime.now().strftime("%H:%M:%S") if camera_fresh else "NO SIGNAL")
-        self._text("camera_mode", "SIMULATED CAMERA" if camera.simulated else "USB CAMERA" if camera_fresh else "CAMERA OFFLINE")
+        self._text("camera_mode", "SIMULATED CAMERA" if camera.simulated else camera.name.upper() if camera_fresh else "CAMERA OFFLINE")
         self._text("camera_status", f"{camera.name.upper()} / {camera.status.upper()}")
         controller = self.station.controller
         control = controller.state
@@ -720,12 +803,16 @@ class Dashboard:
         for key, stick in (("left_stick", control.left_stick), ("right_stick", control.right_stick)):
             self._text(key, f"{'L' if key == 'left_stick' else 'R'}  {stick.x:+.2f} / {stick.y:+.2f}")
         command = self.station.drive_command
+        latched = self.station.brake_latched
+        self.brake_button.set_enabled(self.station.virtual_driving)
+        self.brake_button.set_text("BRAKE ON" if latched else "BRAKE OFF")
+        self.brake_button.props(f'aria-pressed="{str(latched).lower()}"')
         self._text("drive_command", "BRAKE" if command.brake and self.station.virtual_driving else f"Throttle {command.throttle:+.2f} / Turn {command.steering:+.2f}")
-        self._text("drive_hint", "USB telemetry / virtual drive unavailable" if not simulated else "Simulation paused" if paused else "WASD / arrows · Space brake" if self.station.drive.mode == "keyboard" else "Left stick: drive / steer · × or L2: brake")
+        self._text("drive_hint", "USB telemetry / virtual drive unavailable" if not simulated else "Simulation paused" if paused else "W/S or ↑/↓ drive · A/D steer · Space hold / B toggle brake" if self.station.drive.mode == "keyboard" else "R2 accelerate · Left stick steer · L2 hold / Start toggle brake")
         self.values["controller"].props(f'title="{escape(controller.status)}"')
         age = "" if state.age_seconds is None else f" / age {state.age_seconds:.1f}s"
         self._text("footer", f"{state.source_name} / {state.status.value}{age}" + (f" / {state.error}" if state.error else ""))
-        self._text("footer_camera", f"Camera: {'virtual' if camera.simulated else 'USB'}  ·  Drive: {self.station.drive.mode if simulated else 'monitor only'}")
+        self._text("footer_camera", f"Camera: {'virtual' if camera.simulated else camera.name}  ·  Drive: {self.station.drive.mode if simulated else 'monitor only'}")
 
 
 def configure_dashboard(station: BaseStation, *, font_dir: str | None = None) -> None:

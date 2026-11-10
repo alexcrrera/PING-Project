@@ -4,7 +4,8 @@ import re
 import unittest
 from xml.etree import ElementTree as ET
 
-from ping_base.hud import TACTICAL_RETICLE, heading_tape, range_readout
+from ping_base.gimbal import GimbalPose, VirtualGimbal
+from ping_base.hud import TACTICAL_RETICLE, gimbal_indicator, heading_tape, range_readout
 
 
 def ticks(svg):
@@ -72,7 +73,20 @@ class HUDTests(unittest.TestCase):
                 self.assertNotIn('nan', svg.lower())
                 self.assertNotIn('inf', svg.lower())
 
-    def test_reticle_has_matching_dark_outline_and_light_detail(self):
+    def test_gimbal_indicator_centers_at_home_and_tracks_each_axis(self):
+        for pose, coordinates in (
+            (GimbalPose(), (64, 24)),
+            (GimbalPose(yaw_deg=VirtualGimbal.YAW_LIMIT), (120, 24)),
+            (GimbalPose(pitch_deg=VirtualGimbal.PITCH_LIMIT), (64, 8)),
+            (GimbalPose(-VirtualGimbal.YAW_LIMIT, -VirtualGimbal.PITCH_LIMIT), (8, 40)),
+            (GimbalPose(90, -30, 10), (92, 32)),
+        ):
+            with self.subTest(pose=pose):
+                root = ET.fromstring(gimbal_indicator(pose))
+                point = next(e for e in root.iter() if e.get('data-role') == 'gimbal-point')
+                self.assertEqual((float(point.get('cx')), float(point.get('cy'))), coordinates)
+
+    def test_reticle_has_matching_dark_outline_and_green_detail(self):
         root = ET.fromstring(TACTICAL_RETICLE)
         self.assertEqual(root.attrib['viewBox'], '0 0 160 120')
         groups = list(root)

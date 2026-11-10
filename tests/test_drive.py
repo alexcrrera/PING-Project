@@ -63,7 +63,7 @@ class DriveRouterTests(unittest.TestCase):
 
     def test_mode_switch_clears_old_keys_and_ignores_inactive_source(self):
         model = PS4Controller(deadzone=0)
-        state = model.update(RawInput(connected=True, left_stick=Stick(.2, -.8)))
+        state = model.update(RawInput(connected=True, left_stick=Stick(.2, -.8), r2=.8))
         self.router.keyboard("page-a", -1, -.5)
         # Selecting the already-selected source should not interrupt a hold.
         self.router.set_mode("keyboard")
@@ -76,12 +76,14 @@ class DriveRouterTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.router.set_mode("unknown")
 
-    def test_dualshock_stick_cross_l2_and_disconnect(self):
+    def test_dualshock_trigger_throttle_l2_brake_and_disconnect(self):
         self.router.set_mode("dualshock")
         model = PS4Controller(deadzone=0)
         for reading, throttle, steering, brake in (
-            (RawInput(connected=True, left_stick=Stick(-.6, .7)), -.7, -.6, False),
-            (RawInput(connected=True, held=frozenset({Button.CROSS})), 0, 0, True),
+            (RawInput(connected=True, left_stick=Stick(-.6, .7), r2=.7), .7, -.6, False),
+            (RawInput(connected=True, left_stick=Stick(0, -1)), 0, 0, False),
+            (RawInput(connected=True, held=frozenset({Button.CROSS})), 0, 0, False),
+            (RawInput(connected=True, r2=1, l2=.8), 1, 0, True),
             (RawInput(connected=True, l2=.5), 0, 0, True),
             (RawInput(connected=True, l2=.1), 0, 0, False),
             (RawInput(connected=False, left_stick=Stick(1, -1)), 0, 0, True),
@@ -217,7 +219,7 @@ class StationDrivingTests(unittest.TestCase):
     def test_dualshock_drives_then_disconnect_brakes_and_clears_command(self):
         self.station.set_drive_mode("dualshock")
         self.controller.state = self.controller.model.update(
-            RawInput(connected=True, left_stick=Stick(0, -1)))
+            RawInput(connected=True, r2=1))
         self.frames(1)
         self.assertGreater(self.station.virtual_rover.state.speed_mps, .9)
         self.controller.state = self.controller.model.update(RawInput())
