@@ -5,6 +5,9 @@ prioritizes terrain observation, traction and stability: a central camera with
 crosshair and telemetry overlay, an interactive rover model underneath, and a
 telemetry column with ground speed, wheel slip, power, thermals and radio health.
 
+The separate [digital-twin project](digital-twin/README.md) has its own GUI,
+Python package, environment, and launch command.
+
 **NiceGUI** provides the dashboard and local Three.js scene. Pygame remains the
 optional PS4 hardware adapter and standalone input diagnostic tool. The model,
 device adapters, application services and presentation are separate objects.

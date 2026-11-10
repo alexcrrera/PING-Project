@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ping-digital-twin"
+version = "0.1.0"
+description = "Standalone PING rover digital twin and 3D experiment GUI"
+requires-python = ">=3.10"
+dependencies = ["nicegui==3.8.0"]
+
+[project.scripts]
+ping-digital-twin = "ping_twin.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
