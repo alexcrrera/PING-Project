@@ -13,6 +13,7 @@
 
 
 class FlightManager;
+struct LanderState;
 
 
 
@@ -76,7 +77,6 @@ private:
 
 
 
-    void send_group(const String& group_name);
 
      String get_debug_payload();
 
@@ -134,27 +134,14 @@ private:
     bool USB_output_initialized = false;
     bool RADIO_output_initialized = false;
 
-    Handler priority_1_handler;
-    Handler priority_2_handler;
-    Handler priority_3_handler;
-    Handler flags_handler;
-    Handler low_priority_handler;
+    struct GroupEntry
+    {
+        const GroupConfig& config;
+        void (*appendFields)(String&, const LanderState&);
+        Handler handler{};
+    };
 
+    GroupEntry groups[6];
 
-
-    bool isGroupEnabled(const String& group_name);
-
-    String getGroupPayload(const String& group_name);
-
-    String getGroup1_asString();
-    String getGroup2_asString();
-    String getGroup3_asString();
-    String getGroupFlags_asString();
-    String getGroupLowPriority_asString();
-
-    String getGroupContent(const String& group_name);
-
-
-  
+    void send_group(const GroupEntry* group);
 };
-

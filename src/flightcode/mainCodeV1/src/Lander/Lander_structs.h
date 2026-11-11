@@ -4,7 +4,9 @@
 
 #include <Arduino.h>
 #include "../Utilities/Utilities.h"
+#include "../Config/DataGroupsConfig.h"
 #include "../StateMachine/StateMachine_utilities.h"
+
 
 struct StateValidity
 {
@@ -81,8 +83,10 @@ struct WheelData
     
 };
 
-struct WheelGroupData
+struct WGD
 {
+    static constexpr const GroupConfig& config = CommsConfig::WGD;
+
     WheelData front_left;
     WheelData front_right;
     WheelData rear_left;
@@ -90,7 +94,9 @@ struct WheelGroupData
 };
 
 
-struct group_GPS{
+struct GPD{
+    static constexpr const GroupConfig& config = CommsConfig::GPD;
+
     bool isValid = false;
     float latitude_deg = 0.0f;
     float longitude_deg = 0.0f;
@@ -98,6 +104,8 @@ struct group_GPS{
 };
 
 struct ATVL{
+    static constexpr const GroupConfig& config = CommsConfig::ATVL;
+
     float BODY_velocity_X_SI = 0.0f;
     float BODY_velocity_Y_SI = 0.0f;
     float yaw_DEG = 0.0f;
@@ -106,6 +114,8 @@ struct ATVL{
 };
 
 struct WSST{
+    static constexpr const GroupConfig& config = CommsConfig::WSST;
+
     float RPM_FL = 0.0f;
     float RPM_FR = 0.0f;
     float RPM_RL = 0.0f;
@@ -120,6 +130,8 @@ struct WSST{
 
 
 struct ACCL{
+    static constexpr const GroupConfig& config = CommsConfig::ACCL;
+
     float BODY_linear_acceleration_X_SI = 0.0f;
     float BODY_linear_acceleration_Y_SI = 0.0f;
     float BODY_linear_acceleration_Z_SI = 0.0f;
@@ -136,6 +148,8 @@ struct WCT{
 
 
 struct GMBL{
+    static constexpr const GroupConfig& config = CommsConfig::GMBL;
+
     float estimated_horizontal_distance_1_M = 0.0f;
     float estimated_horizontal_distance_2_M = 0.0f;
     uint8_t estimation_validity = 0;
@@ -145,6 +159,9 @@ struct GMBL{
     float tilt_angle_DEG = 0.0f;
     
 };
+
+
+
 
 struct LanderState
 {
@@ -172,9 +189,9 @@ struct LanderState
 
     StateValidity validity;
     
-    WheelGroupData wheel_data;
+    WGD wheel_data;
 
-    group_GPS group_GPS_data;
+    GPD group_GPS_data;
     GMBL group_GMBL_data;
     ATVL group_ATVL_data;
     WSST group_WSST_data;

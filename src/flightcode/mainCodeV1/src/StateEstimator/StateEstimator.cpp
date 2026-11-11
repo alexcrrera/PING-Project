@@ -50,6 +50,18 @@ void StateEstimator::updateStructs(LanderState& state, const SensorMeasurements&
     state.group_ATVL_data.yaw_DEG = state.attitude.Yaw_SI;
     state.group_ATVL_data.pitch_DEG = state.attitude.Pitch_SI;
     state.group_ATVL_data.roll_DEG = state.attitude.Roll_SI;    
+
+    // WSST uses the same wheel data as the previous wheel telemetry.
+    const auto& wheels = state.wheel_data;
+    auto& wsst = state.group_WSST_data;
+    wsst.RPM_FL = wheels.front_left.RPM;
+    wsst.RPM_FR = wheels.front_right.RPM;
+    wsst.RPM_RL = wheels.rear_left.RPM;
+    wsst.RPM_RR = wheels.rear_right.RPM;
+    wsst.estimated_slip_ratio_FL = wheels.front_left.estimated_slip_ratio;
+    wsst.estimated_slip_ratio_FR = wheels.front_right.estimated_slip_ratio;
+    wsst.estimated_slip_ratio_RL = wheels.rear_left.estimated_slip_ratio;
+    wsst.estimated_slip_ratio_RR = wheels.rear_right.estimated_slip_ratio;
 }
 
 

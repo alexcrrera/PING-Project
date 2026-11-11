@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from html import escape
 import math
+from pathlib import Path
 import time
 from typing import Literal
 from urllib.parse import urlencode
@@ -15,7 +16,7 @@ from nicegui import app, context, ui
 from .fonts import register_fonts
 from .camera import OpenCVCameraSource, SimulatedCameraSource
 from .camera_filters import CameraFilterSettings, CameraFrameProcessor, FILTER_LABELS, VISION_EFFECTS
-from .gimbal import StabilizationMode
+from .gimbal import GimbalPose, StabilizationMode
 from .hud import TACTICAL_RETICLE, gimbal_indicator, heading_tape, range_readout
 from .keyboard import KEYBOARD_SCRIPT
 from .navigation import MAP_ZOOM_LEVELS, campus_map, simulated_position
@@ -27,6 +28,10 @@ from .telemetry.model import RoverTelemetrySample
 from .telemetry.rvr import GROUP_EXPIRY
 from .telemetry.serial import RAW_LOG_LINES
 from .theme import CSS
+
+
+PING_ICON_PATH = Path(__file__).with_name("assets") / "ping-icon.png"
+PING_ICON_URL = "/assets/ping-icon.png"
 
 
 ICONS = {
@@ -42,8 +47,23 @@ STABILIZATION_LABELS = {
 }
 STABILIZATION_HINT = "Z: Off → Lock → Follow"
 
-GROUP_TITLES = {"P1": "Motion", "P2": "Wheels", "P3": "Sensors", "F": "Flags", "LP": "Low priority"}
+GROUP_TITLES = {
+    "ATVL": "Motion", "WSST": "Wheel speed and slip", "ACCL": "Acceleration",
+    "GPD": "GNSS", "GMBL": "Gimbal", "WGD": "Wheel data",
+}
 GROUP_FIELDS = {
+    ("ATVL", 5): ("Vx (m/s)", "Vy (m/s)", "Yaw (°)", "Pitch (°)", "Roll (°)"),
+    ("WSST", 8): tuple(f"{wheel} {channel}" for channel in ("RPM", "slip")
+                      for wheel in ("FL", "FR", "RL", "RR")),
+    ("ACCL", 3): ("Accel X (m/s²)", "Accel Y (m/s²)", "Accel Z (m/s²)"),
+    ("GPD", 4): ("Valid fix", "Latitude (°)", "Longitude (°)", "Altitude MSL (m)"),
+    ("GMBL", 7): ("Range 1 (m)", "Range 2 (m)", "Validity mask", "Mode",
+                  "LiDAR (m)", "Pan (°)", "Tilt (°)"),
+    ("WGD", 16): tuple(f"{wheel} {channel}" for wheel in ("FL", "FR", "RL", "RR")
+                       for channel in ("RPM", "current (A)", "torque (Nm)", "slip")),
+}
+LEGACY_GROUP_TITLES = {"P1": "Motion", "P2": "Wheels", "P3": "Sensors", "F": "Flags", "LP": "Low priority"}
+GROUP_FIELDS.update({
     ("P1", 5): ("Vx (m/s)", "Vy (m/s)", "Yaw (°)", "Pitch (°)", "Roll (°)"),
     ("P1", 4): ("Speed (m/s)", "Yaw (°)", "Pitch (°)", "Roll (°)"),
     ("P2", 13): tuple(f"{wheel} {channel}" for channel in ("ω (rad/s)", "slip", "current (A)")
@@ -52,7 +72,7 @@ GROUP_FIELDS = {
                  "Latitude (°)", "Altitude (m)", "Gimbal pitch (°)", "Gimbal pan (°)",
                  "Range 1 (m)", "Range 2 (m)", "Validity mask"),
     ("F", 2): ("Brake override", "Regime"),
-}
+})
 
 
 def _icon(name: str) -> str:
@@ -64,8 +84,11 @@ def rover_group_details(sample: RoverTelemetrySample) -> str:
     if sample.acceleration_mps2 is not None:
         ax, ay, az = sample.acceleration_mps2
         lines.append(f"Accel XYZ {ax:+.2f}, {ay:+.2f}, {az:+.2f} m/s²")
+    if sample.latitude_deg is not None and sample.longitude_deg is not None and sample.altitude_m is not None:
         lines.append(f"GPS {sample.latitude_deg:.6f}°, {sample.longitude_deg:.6f}° / {sample.altitude_m:.1f} m")
+    if sample.gimbal_pitch_deg is not None and sample.gimbal_pan_deg is not None:
         lines.append(f"Gimbal pitch {sample.gimbal_pitch_deg:+.1f}° / pan {sample.gimbal_pan_deg:+.1f}°")
+    if sample.gimbal_validity is not None:
         ranges = (sample.gimbal_distance_1_m, sample.gimbal_distance_2_m)
         rangeText = " / ".join(f"{value:.2f} m" if value is not None else "-" for value in ranges)
         lines.append(f"Gimbal ranges {rangeText}")
@@ -169,6 +192,7 @@ class Dashboard:
     def _build(self) -> None:
         with ui.element("header").classes("topbar"):
             with ui.element("div").classes("brand"):
+                ui.element("img").props(f'src="{PING_ICON_URL}" alt="" width="32" height="32"').classes("brand-icon")
                 ui.label("PING").classes("brand-word")
                 ui.element("div").classes("brand-divider")
                 ui.html("GROUND SYSTEMS<br>ROVER / 01", sanitize=False).classes("eyebrow")
@@ -479,10 +503,14 @@ class Dashboard:
 
     def _telemetry_monitor(self) -> None:
         self.group_tables: dict[str, ui.html] = {}
+        self.legacy_group_cards = {}
         with ui.element("section").classes("telemetry-monitor").props('id="telemetry" aria-label="Telemetry monitor"'):
             with ui.element("div").classes("telemetry-group-columns"):
-                for group, title in GROUP_TITLES.items():
-                    with ui.element("section").classes("panel telemetry-group-card"):
+                for group, title in (GROUP_TITLES | LEGACY_GROUP_TITLES).items():
+                    with ui.element("section").classes("panel telemetry-group-card") as card:
+                        if group in LEGACY_GROUP_TITLES:
+                            self.legacy_group_cards[group] = card
+                            card.set_visibility(False)
                         with ui.element("div").classes("panel-head"):
                             ui.label(f"{group} / {title}").classes("panel-title")
                         self._label(f"group_status_{group}", "Waiting", "telemetry-group-status")
@@ -497,6 +525,8 @@ class Dashboard:
         frames = source.latest_group_frames if source is not None else {}
         for group, table in self.group_tables.items():
             frame = frames.get(group)
+            if group in self.legacy_group_cards:
+                self.legacy_group_cards[group].set_visibility(frame is not None)
             fields = frame[1] if frame is not None else None
             status = "Waiting"
             if frame is not None:
@@ -658,6 +688,17 @@ class Dashboard:
     def gimbal_available(self) -> bool:
         return hasattr(self.station.camera, "set_gimbal")
 
+    def _update_rover_gimbal(self, sample: RoverTelemetrySample | None, *, simulated: bool) -> None:
+        if simulated:
+            pose = self.station.gimbal.state
+        elif (isinstance(sample, RoverTelemetrySample) and sample.gimbal_pan_deg is not None
+              and sample.gimbal_pitch_deg is not None):
+            # The mount is parented to the chassis and takes body-relative angles.
+            pose = GimbalPose(yaw_deg=sample.gimbal_pan_deg, pitch_deg=sample.gimbal_pitch_deg)
+        else:
+            pose = GimbalPose()
+        self.rover.update_gimbal(pose)
+
     def _release_inputs(self) -> None:
         self.station.drive.clear(self.client.id)
         self.station.gimbal.release(self.client.id)
@@ -795,7 +836,7 @@ class Dashboard:
         self._text("gimbal_angles", f"PAN {gimbal.yaw_deg:+.0f}° / TILT {gimbal.pitch_deg:+.0f}°")
         if self.gimbal_available:
             self.gimbal_view.set_content(gimbal_indicator(gimbal))
-        self.rover.update_gimbal(gimbal)
+        self._update_rover_gimbal(sample, simulated=simulated)
         if self.drive_toggle.value != self.station.drive.mode:
             self.drive_toggle.set_value(self.station.drive.mode)
         self.drive_toggle.set_enabled(self.station.drive_input_enabled)
@@ -955,6 +996,7 @@ class Dashboard:
 
 def configure_dashboard(station: BaseStation, *, font_dir: str | None = None) -> None:
     """Register routes and a single global service timer before ui.run."""
+    app.add_static_file(local_file=PING_ICON_PATH, url_path=PING_ICON_URL)
     font_css, has_suisse = register_fonts(font_dir)
     processor = CameraFrameProcessor()
 

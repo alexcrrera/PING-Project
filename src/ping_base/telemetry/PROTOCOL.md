@@ -19,11 +19,14 @@ Rear-right
 | --- | --- | --- |
 | `ATVL` | 15 Hz | Body velocity X and Y (m/s), yaw, pitch, roll (degrees) |
 | `WSST` | 5 Hz | Four wheel angular speeds (RPM), four slip ratios (0–1)|
-| `ACCL` | 4 Hz | Acceleration X/Y/Z (m/s²), linearised (no gravity) in the body frame |
-| `WCT` | 3 Hz | 4 wheel currents (A), 4 wheel estimated torque (Nm) |
-| `BRK` | 1 Hz | Brake override (`[OK]`/`1` for true, `[X]`/`0` for false), regime mode |
-| `GPS` | 2 Hz | Availability (0 no, 1 yes), latitude longitude, altitude |
+| `ACCL` | 5 Hz | Acceleration X/Y/Z (m/s²), linearised (no gravity) in the body frame |
+| `GPD` | 2 Hz | Availability (0 no, 1 yes), latitude longitude, altitude |
 | `GMBL` | 0.5 Hz | estimated distance horizontal 1, estimated distance 2, estimation validity (0 none, 1 estim good 2 bad, 2: 1 bad 2 good, 3: both good (we use different methods to calculate the horizontal distance from the rover and the measured point with the lidar )), gimbal mode (0: free, 1: yaw follow, 2: yaw and pitch follow), lidar distance, camera pan (body), pitch (body) caemra |
+| `WGD` | 0.5 Hz (disabled) | RPM, current (A), torque (Nm), slip ratio for each wheel in FL, FR, RL, RR order |
+
+Firmware rates and per-port enable flags are in `DataGroupsConfig.h`.
+`WCT` and `BRK` are reserved for separate wheel-current/torque and brake packets.
+
 
 
 

@@ -285,6 +285,32 @@ class SerialSourceTests(unittest.TestCase):
         self.assertEqual(state.sample.velocity_body_mps, (-3.0, 4.0))
         self.assertEqual(state.sample.speed_mps, 5.0)
 
+    def test_named_rover_groups_decode_and_merge_through_serial(self):
+        port = FakePort(
+            b"$RVR,ATVL,3,4,-90,2,-3*\n"
+            b"$RVR,WSST,10,20,30,40,.1,.2,.3,.4*\n"
+            b"$RVR,ACCL,1,2,3*\n"
+            b"$RVR,GPD,1,48.84,2.35,45*\n"
+            b"$RVR,GMBL,2.5,0,1,2,5,-20,10*\n"
+            b"$RVR,GMBL,2.5,0,4,2,5,-20,10*\n"
+        )
+        source = SerialTelemetrySource("COM3", serial_factory=lambda **kwargs: port)
+        manager = TelemetryManager(source)
+        state = manager.update(0)
+        sample = state.sample
+        self.assertEqual((state.received_count, state.rejected_count), (5, 1))
+        self.assertEqual(set(source.latest_group_frames), {"ATVL", "WSST", "ACCL", "GPD", "GMBL"})
+        self.assertEqual((sample.speed_mps, sample.heading_deg, sample.roll_deg), (5, 270, -3))
+        self.assertEqual(sample.wheel_rpm, (10, 20, 30, 40))
+        self.assertEqual(sample.wheel_slip, (.1, .2, .3, .4))
+        self.assertEqual(sample.acceleration_mps2, (1, 2, 3))
+        self.assertEqual((sample.latitude_deg, sample.longitude_deg, sample.altitude_m), (48.84, 2.35, 45))
+        self.assertEqual((sample.gimbal_distance_1_m, sample.gimbal_distance_2_m), (2.5, None))
+        self.assertEqual((sample.gimbal_pan_deg, sample.gimbal_pitch_deg), (-20, 10))
+
+        port.data = b"$RVR,GPD,0,0,0,0*\n"
+        self.assertIsNone(manager.update(.1).sample.latitude_deg)
+
     def test_rover_groups_decode_and_merge_through_the_serial_source(self):
         port = FakePort(b"$RVR,P1,0.75,-90,")
         manager = TelemetryManager(SerialTelemetrySource("COM3", serial_factory=lambda **kw: port))

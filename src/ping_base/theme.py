@@ -19,6 +19,7 @@ button:focus-visible, a:focus-visible { outline:1px solid var(--accent)!importan
 .q-field--dark .q-field__control:before { border-color:var(--line); }
 .topbar { width:100%; height:46px; padding:0 24px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
 .brand { display:flex; align-items:center; gap:18px; }
+.brand-icon { width:32px; height:32px; flex:none; object-fit:contain; }
 .brand-word { font-size:21px; font-weight:500; letter-spacing:.08em; }
 .brand-divider { height:23px; width:1px; background:var(--line); }
 .eyebrow { font-size:10px; font-weight:500; letter-spacing:.16em; line-height:1.6; text-transform:uppercase; color:var(--muted); }

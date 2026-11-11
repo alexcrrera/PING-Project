@@ -46,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
 
     from nicegui import ui
     from .camera import OpenCVCameraSource, SimulatedCameraSource
-    from .dashboard import configure_dashboard
+    from .dashboard import PING_ICON_PATH, configure_dashboard
     from .station import BaseStation, PS4ControllerService
     from .telemetry import SerialTelemetrySource, SimulatedTelemetrySource, TelemetryManager
 
@@ -58,6 +58,6 @@ def main(argv: list[str] | None = None) -> int:
     configure_dashboard(station, font_dir=args.font_dir)
     # SDL and service lifecycles remain on one process's main event-loop thread.
     ui.run(host=args.host, port=args.port, reload=False, native=False, show=not args.no_browser,
-           title="PING / Rover operations", dark=True, favicon="◒", show_welcome_message=False,
+           title="PING / Rover operations", dark=True, favicon=str(PING_ICON_PATH), show_welcome_message=False,
            binding_refresh_interval=.1, reconnect_timeout=5.0)
     return 0

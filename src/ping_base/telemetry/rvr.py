@@ -5,7 +5,10 @@ from math import hypot, isfinite, tau
 from .model import RoverTelemetrySample, validate_sample
 
 
-GROUP_EXPIRY = {"P1": 1.5, "P2": 1.0, "P3": 1.5, "F": 2.5, "LP": 5.0}
+GROUP_EXPIRY = {
+    "P2": 1.0, "P3": 1.5, "F": 2.5, "LP": 5.0, "P1": 1.5,
+    "WGD": 5.0, "WSST": 1.0, "ACCL": 1.0, "GPD": 2.5, "GMBL": 5.0, "ATVL": 1.5,
+}
 BRAKE_FLAGS = {"[OK]": True, "[X]": False, "1": True, "0": False}
 
 
@@ -19,6 +22,43 @@ def _numbers(fields: tuple[str, ...], count: int) -> tuple[float, ...]:
 
 
 def _decode_fields(group: str, fields: tuple[str, ...]) -> dict:
+    if group == "ATVL":
+        vx, vy, yaw, pitch, roll = _numbers(fields, 5)
+        return {"velocity_body_mps": (vx, vy), "speed_mps": hypot(vx, vy),
+                "heading_deg": yaw % 360.0, "pitch_deg": pitch, "roll_deg": roll}
+
+    if group == "WSST":
+        values = _numbers(fields, 8)
+        return {"wheel_rpm": values[:4], "wheel_slip": values[4:]}
+
+    if group == "ACCL":
+        return {"acceleration_mps2": _numbers(fields, 3)}
+
+    if group == "GPD":
+        valid, latitude, longitude, altitude = _numbers(fields, 4)
+        if valid not in (0, 1) or not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
+            raise ValueError("Invalid GPD fix")
+        return {"latitude_deg": latitude if valid else None,
+                "longitude_deg": longitude if valid else None,
+                "altitude_m": altitude if valid else None}
+
+    if group == "GMBL":
+        distance1, distance2, validity, mode, _, pan, tilt = _numbers(fields, 7)
+        if validity not in range(4) or mode not in range(3):
+            raise ValueError("Invalid gimbal validity mask or mode")
+        mask = int(validity)
+        if (mask & 1 and distance1 < 0) or (mask & 2 and distance2 < 0):
+            raise ValueError("Valid gimbal distances must be nonnegative")
+        return {"gimbal_pan_deg": pan, "gimbal_pitch_deg": tilt,
+                "gimbal_distance_1_m": distance1 if mask & 1 else None,
+                "gimbal_distance_2_m": distance2 if mask & 2 else None,
+                "gimbal_validity": mask}
+
+    if group == "WGD":
+        values = _numbers(fields, 16)
+        return {"wheel_rpm": values[0::4], "motor_current_a": values[1::4],
+                "wheel_slip": values[3::4]}
+
     if group == "LP":
         return {"low_priority_fields": fields}
 
@@ -35,9 +75,7 @@ def _decode_fields(group: str, fields: tuple[str, ...]) -> dict:
 
     if group == "P1":
         if len(fields) == 5:
-            vx, vy, yaw, pitch, roll = _numbers(fields, 5)
-            return {"velocity_body_mps": (vx, vy), "speed_mps": hypot(vx, vy),
-                    "heading_deg": yaw % 360.0, "pitch_deg": pitch, "roll_deg": roll}
+            return _decode_fields("ATVL", fields)
         speed, yaw, pitch, roll = _numbers(fields, 4)
         return {"speed_mps": speed, "heading_deg": yaw % 360.0,
                 "pitch_deg": pitch, "roll_deg": roll}
@@ -89,8 +127,8 @@ class RoverGroups:
         self._latest[group] = (now, fields, values)
 
         merged = {}
-        # P1 carries the primary roll reading. P2 supplies roll when P1 expires.
-        for tag in ("P2", "P3", "F", "LP", "P1"):
+        # Named groups take precedence over legacy readings for the same channels.
+        for tag in GROUP_EXPIRY:
             timestamp, _, channels = self._latest.get(tag, (now, (), {}))
             if now - timestamp < GROUP_EXPIRY[tag]:
                 merged.update(channels)

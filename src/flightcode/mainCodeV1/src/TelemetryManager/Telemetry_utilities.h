@@ -33,6 +33,8 @@ namespace TelemetryUtilities
         payload += value ? "[OK]" : "[X]";
     else if constexpr (std::is_same_v<T, String>)
         payload += value;
+    else if constexpr (std::is_integral_v<T>)
+        payload += String(+value); // Promote byte fields to numbers.
     else if (decimals >= 0)
         payload += String(value, decimals);
     else

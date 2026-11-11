@@ -4,6 +4,7 @@
 #include <array>
 
 #include "../Utilities/Utilities.h"
+#include "DataGroupsConfig.h"
 
 enum class SerialOutputType {
     HUMAN_READABLE, 
@@ -28,19 +29,10 @@ struct SerialPortConfig {
     SerialOutputType outputType;
 
     int bufferSize = 100; // default buffer size for incoming data
-    
 };
 
-
-struct GroupConfig {
-    const char* name;
-    float frequency;
-    bool enabled = true; // default to true, can be set to false if the group is not needed
-};
 
 namespace CommsConfig {
-
-    
 
     constexpr SerialPortConfig RADIO = {
         .port = &Serial5,
@@ -67,41 +59,6 @@ namespace CommsConfig {
         .bufferSize = 30 // buffer size for incoming data
        
     };
-
-
-    constexpr GroupConfig PRIORITY_1 = {
-        .name = "P1",
-        .frequency = 10.0f, // 12 Hz
-        .enabled = true
-    };
-
-    constexpr GroupConfig PRIORITY_2 = {
-        .name = "P2",
-        .frequency = 1.0f, // 5 Hz
-        .enabled = true
-    };
-
-    constexpr GroupConfig PRIORITY_3 = {
-        .name = "P3",
-        .frequency = 1.0f, // 2 Hz
-        .enabled = true
-    };
-
-    constexpr GroupConfig FLAGS = {
-        .name = "F",
-        .frequency = 1.0f, // 1 Hz
-        .enabled = true
-    };
-
-    constexpr GroupConfig LOW_PRIORITY = {
-        .name = "LP",
-        .frequency = 0.5f, // 0.5 Hz
-        .enabled = true
-    };
-
-    
-
-   
 
 
     constexpr const char* outputHeaderTelemetryFormat =

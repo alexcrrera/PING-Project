@@ -3,10 +3,91 @@
 #include "../FlightManager/FlightManager.h"
 
 
+namespace
+{
+    using TelemetryUtilities::addTelemetryField;
+
+    void appendATVLFields(String& payload, const LanderState& state)
+    {
+        const auto& data = state.group_ATVL_data;
+        addTelemetryField(payload, data.BODY_velocity_X_SI, 2);
+        addTelemetryField(payload, data.BODY_velocity_Y_SI, 2);
+        addTelemetryField(payload, data.yaw_DEG, 2);
+        addTelemetryField(payload, data.pitch_DEG, 2);
+        addTelemetryField(payload, data.roll_DEG, 2);
+    }
+
+    void appendWSSTFields(String& payload, const LanderState& state)
+    {
+        const auto& data = state.group_WSST_data;
+        addTelemetryField(payload, data.RPM_FL);
+        addTelemetryField(payload, data.RPM_FR);
+        addTelemetryField(payload, data.RPM_RL);
+        addTelemetryField(payload, data.RPM_RR);
+        addTelemetryField(payload, data.estimated_slip_ratio_FL, 3);
+        addTelemetryField(payload, data.estimated_slip_ratio_FR, 3);
+        addTelemetryField(payload, data.estimated_slip_ratio_RL, 3);
+        addTelemetryField(payload, data.estimated_slip_ratio_RR, 3);
+    }
+
+    void appendACCLFields(String& payload, const LanderState& state)
+    {
+        const auto& data = state.group_ACCL_data;
+        addTelemetryField(payload, data.BODY_linear_acceleration_X_SI, 2);
+        addTelemetryField(payload, data.BODY_linear_acceleration_Y_SI, 2);
+        addTelemetryField(payload, data.BODY_linear_acceleration_Z_SI, 2);
+    }
+
+    void appendGPDFields(String& payload, const LanderState& state)
+    {
+        const auto& data = state.group_GPS_data;
+        addTelemetryField(payload, static_cast<int>(data.isValid));
+        addTelemetryField(payload, data.latitude_deg, 6);
+        addTelemetryField(payload, data.longitude_deg, 6);
+        addTelemetryField(payload, data.altitude_MSL_m, 2);
+    }
+
+    void appendGMBLFields(String& payload, const LanderState& state)
+    {
+        const auto& data = state.group_GMBL_data;
+        addTelemetryField(payload, data.estimated_horizontal_distance_1_M, 2);
+        addTelemetryField(payload, data.estimated_horizontal_distance_2_M, 2);
+        addTelemetryField(payload, data.estimation_validity);
+        addTelemetryField(payload, data.gimbal_mode);
+        addTelemetryField(payload, data.lidar_distance_M, 2);
+        addTelemetryField(payload, data.pan_angle_DEG, 2);
+        addTelemetryField(payload, data.tilt_angle_DEG, 2);
+    }
+
+    void appendWGDFields(String& payload, const LanderState& state)
+    {
+        const auto& data = state.wheel_data;
+        const WheelData* wheels[] = {
+            &data.front_left, &data.front_right, &data.rear_left, &data.rear_right
+        };
+
+        for (const auto* wheel : wheels)
+        {
+            addTelemetryField(payload, wheel->RPM);
+            addTelemetryField(payload, wheel->current_A, 2);
+            addTelemetryField(payload, wheel->estimated_torque_NM, 2);
+            addTelemetryField(payload, wheel->estimated_slip_ratio, 3);
+        }
+    }
+}
+
 TelemetryManager::TelemetryManager(
     FlightManager* flightManager
 )
-    : flightManager(flightManager)
+    : flightManager(flightManager),
+      groups{
+          {ATVL::config, appendATVLFields},
+          {WSST::config, appendWSSTFields},
+          {ACCL::config, appendACCLFields},
+          {GPD::config, appendGPDFields},
+          {GMBL::config, appendGMBLFields},
+          {WGD::config, appendWGDFields}
+      }
 {
 }
 
@@ -20,11 +101,10 @@ void TelemetryManager::begin()
 
     send_USB_String("INIT START OF TELEM",true);
 
-    priority_1_handler.begin(CommsConfig::PRIORITY_1.frequency,this,&TelemetryManager::send_group,CommsConfig::PRIORITY_1.name);
-    priority_2_handler.begin(CommsConfig::PRIORITY_2.frequency,this,&TelemetryManager::send_group,CommsConfig::PRIORITY_2.name);
-    priority_3_handler.begin(CommsConfig::PRIORITY_3.frequency,this,&TelemetryManager::send_group,CommsConfig::PRIORITY_3.name);
-    flags_handler.begin(CommsConfig::FLAGS.frequency,this,&TelemetryManager::send_group,CommsConfig::FLAGS.name);
-    low_priority_handler.begin(CommsConfig::LOW_PRIORITY.frequency,this,&TelemetryManager::send_group,CommsConfig::LOW_PRIORITY.name);
+    for (auto& group : groups)
+    {
+        group.handler.begin(group.config.frequency, this, &TelemetryManager::send_group, &group);
+    }
 
     if (CommsConfig::USB.enabled)
     {
@@ -54,30 +134,35 @@ void TelemetryManager::begin()
 }
 
 
-void TelemetryManager::send_group(const String& group_name)
+void TelemetryManager::send_group(const GroupEntry* group)
 {
-    
-    String payload = getGroupPayload(group_name);
+    const auto& config = group->config;
+    const bool sendUSB = config.enabled_for_USB &&
+        USB_output_type == SerialOutputType::GROUP_FORMAT &&
+        USB_output_enabled && USB_output_initialized && USB_periodic_output_enabled;
+    const bool sendRadio = config.enabled_for_RADIO &&
+        RADIO_output_type == SerialOutputType::GROUP_FORMAT &&
+        RADIO_output_enabled && RADIO_output_initialized && RADIO_periodic_output_enabled;
 
-
-    if(CommsConfig::USB.outputType == SerialOutputType::GROUP_FORMAT){
-
-        if (USB_output_enabled && USB_output_initialized && isGroupEnabled(group_name))
-            {
-                send_USB_String(payload,true);
-            }
+    if (!sendUSB && !sendRadio)
+    {
+        return;
     }
 
-    if(CommsConfig::RADIO.outputType == SerialOutputType::GROUP_FORMAT){
+    String payload = CommsConfig::outputHeaderTelemetryFormat;
+    payload += ",";
+    payload += config.name;
+    group->appendFields(payload, flightManager->getLander().getState());
+    payload += CommsConfig::outputLineEndingTelemetryFormat;
 
-        if (RADIO_output_enabled && RADIO_output_initialized && isGroupEnabled(group_name))
-            {
-                send_RADIO_String(payload,true);
-            }
+    if (sendUSB)
+    {
+        send_USB_String(payload, true);
     }
-
-  
-    
+    if (sendRadio)
+    {
+        send_RADIO_String(payload, true);
+    }
 }
 
 
@@ -85,11 +170,10 @@ void TelemetryManager::update(uint32_t now)
 {
     handleInput();
 
-    priority_1_handler.handle();
-    priority_2_handler.handle();
-    priority_3_handler.handle();
-    flags_handler.handle();
-    low_priority_handler.handle();
+    for (auto& group : groups)
+    {
+        group.handler.handle();
+    }
 
     // --------------------------------------------------------
     // USB
@@ -110,7 +194,7 @@ void TelemetryManager::update(uint32_t now)
             {
                 send_USB_String(get_debug_payload(),false);
             }
-            else
+            else if (USB_output_type == SerialOutputType::BASE_STATION_FORMAT)
             {
                 send_USB_String(get_telemetry_payload(),false);
             }
@@ -313,136 +397,3 @@ void TelemetryManager::toggle_USB()
 
     USB_output_enabled = !USB_output_enabled;
 }
-
-String TelemetryManager::getGroupPayload(const String& group_name)
-{
-    String payload = "";
-    payload += CommsConfig::outputHeaderTelemetryFormat;
-    payload += "," + group_name + ",";
-
-   payload += getGroupContent(group_name);
-    payload += CommsConfig::outputLineEndingTelemetryFormat;
-    return payload;
-}
-
-String TelemetryManager::getGroupContent(const String& group_name)
-{
-    if(group_name == "P1")
-    {
-        return getGroup1_asString();
-    }
-    else if(group_name == "P2")
-    {
-        return getGroup2_asString();
-    }
-    else if(group_name == "P3")
-    {
-        return getGroup3_asString();
-    }
-    else if(group_name == "F")
-    {
-        return getGroupFlags_asString();
-    }
-    else if(group_name == "LP")
-    {
-        return getGroupLowPriority_asString();
-    }
-
-    return "ERR_UNKNOWN_GROUP";
- 
-}
-
-bool TelemetryManager::isGroupEnabled(const String& group_name)
-{
-    if (group_name == "P1")
-    {
-        return CommsConfig::PRIORITY_1.enabled;
-    }
-    else if (group_name == "P2")
-    {
-        return CommsConfig::PRIORITY_2.enabled;
-    }
-    else if (group_name == "P3")
-    {
-        return CommsConfig::PRIORITY_3.enabled;
-    }
-    else if (group_name == "F")
-    {
-        return CommsConfig::FLAGS.enabled;
-    }
-    else if (group_name == "LP")
-    {
-        return CommsConfig::LOW_PRIORITY.enabled;
-    }
-
-    return false; // default to false if group name is not recognized
-}
-
-String TelemetryManager::getGroup1_asString()
-{
-
-    String payload = ""; // no need to add header
-
-    // vx,vy, yaw, pitch, roll
-
-    auto lander_state = flightManager->getLander().getState();
-    TelemetryUtilities::addTelemetryField(payload, lander_state.velocity.X_SI, 2);
-    TelemetryUtilities::addTelemetryField(payload, lander_state.velocity.Y_SI, 2);
-    TelemetryUtilities::addTelemetryField(payload, lander_state.attitude.Yaw_SI, 2);
-    TelemetryUtilities::addTelemetryField(payload, lander_state.attitude.Pitch_SI, 2);
-    TelemetryUtilities::addTelemetryField(payload, lander_state.attitude.Roll_SI, 2);
-    return payload;
-}
-
-String TelemetryManager::getGroup2_asString()
-
-{
-
-    // wheel data
-    String payload = ""; // no need to add header
-
-
-
-    // send rpm only
-    auto wheel_data = flightManager->getLander().getState().wheel_data;
-
-    TelemetryUtilities::addTelemetryField(payload, wheel_data.front_left.RPM);
-    TelemetryUtilities::addTelemetryField(payload, wheel_data.front_right.RPM);
-    TelemetryUtilities::addTelemetryField(payload, wheel_data.rear_left.RPM);
-    TelemetryUtilities::addTelemetryField(payload, wheel_data.rear_right.RPM);
-    return payload;
-}
-
-
-String TelemetryManager::getGroup3_asString()
-{
-    String payload = ""; // no need to add header
-
-    TelemetryUtilities::addTelemetryField(payload, 7.0);
-    TelemetryUtilities::addTelemetryField(payload, 8.0);
-    TelemetryUtilities::addTelemetryField(payload, 9.0);
-    return payload;
-}
-
-
-String TelemetryManager::getGroupFlags_asString()
-{
-    String payload = ""; // no need to add header
-
-    TelemetryUtilities::addTelemetryField(payload, true);
-    TelemetryUtilities::addTelemetryField(payload, false);
-    TelemetryUtilities::addTelemetryField(payload, true);
-    return payload;
-}
-
-
-String TelemetryManager::getGroupLowPriority_asString()
-{
-    String payload = ""; // no need to add header
-
-    TelemetryUtilities::addTelemetryField(payload, 10.0);
-    TelemetryUtilities::addTelemetryField(payload, 11.0);
-    TelemetryUtilities::addTelemetryField(payload, 12.0);
-    return payload;
-}
-
