@@ -57,6 +57,8 @@ namespace SensorConfig {
     constexpr float YPR_LinearAccel_Gyro_poll_frequency = 100.0f; // Hz
     constexpr float GNSS_Solution_LLA_poll_frequency = 5.0f; // Hz
 
+    constexpr float YBA_LinearAccel_Gyro_poll_frequency = 100.0f; // Hz
+
 
     constexpr I2CSensorConfig LIDAR = {
         .port = &Wire,

@@ -30,23 +30,23 @@ bool VN300::begin()
     // Yaw / Pitch / Roll
     // Linear acceleration NED
     // Compensated angular rates
-    vectornav->println(VN300Utilities::configureAsynchOutputType(17));
-         delay(200); // wait for the serial port to initialize
+
+
+
+    // YPR NED -> 17, BODY -> 16
+    vectornav->println(VN300Utilities::configureAsynchOutputType(16));
+         delay(500); // wait for the serial port to initialize
     // Asynchronous output frequency
-    vectornav->println(VN300Utilities::configureAsynchOutputFrequency(SensorConfig::YPR_LinearAccel_Gyro_poll_frequency));
+    vectornav->println(VN300Utilities::configureAsynchOutputFrequency(SensorConfig::YBA_LinearAccel_Gyro_poll_frequency));
 
 
     dataIndex = 0;
     
-         delay(400); // wait for the serial port to initialize
+    delay(400); // wait for the serial port to initialize
   
     // polls solutions at the specified rates
     //YPR_LinearAccel_Gyro_poll_handler.begin(SensorConfig::YPR_LinearAccel_Gyro_poll_frequency,[this]() { poll_YPR_LinearAccel_Gyro(); }); // set to automatic output from VN300, no need to poll
-   GNSS_Solution_LLA_poll_handler.begin(
-    SensorConfig::GNSS_Solution_LLA_poll_frequency,
-    this,
-    &VN300::poll_GNSS_Solution_LLA
-);
+   GNSS_Solution_LLA_poll_handler.begin(SensorConfig::GNSS_Solution_LLA_poll_frequency,this,&VN300::poll_GNSS_Solution_LLA);
 
 INS_Solution_LLA_poll_handler.begin(
     SensorConfig::INS_Solution_LLA_poll_frequency,
@@ -73,11 +73,15 @@ void VN300::update()
 
 
 void VN300::process_data()
-{
-    int vectornavIdentity = VN300Utilities::getHeader(incomingData);
+{   
 
+  
+    int vectornavIdentity = VN300Utilities::getHeader(incomingData);
+  
     switch (vectornavIdentity)
     {
+
+      
         case 1:
         {
            break;}
@@ -96,13 +100,15 @@ void VN300::process_data()
         case 240: // Yaw / Pitch / Roll, Linear Acceleration, Compensated Angular Rates
         {
             VN300Parsing::parse_YPR_LinearAccel_Gyro(incomingData, measurement_data);
+            
             break;}
 
 
 
         case 239: // Yaw / Pitch / Roll, Linear Acceleration in Body Frame, Compensated Angular Rates
-        {
+        { 
             VN300Parsing::parse_YBA_LinearAccel_Gyro(incomingData, measurement_data);
+            Serial.println("YBA_LinearAccel_Gyro data received");
             break;}
 
         default:

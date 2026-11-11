@@ -76,9 +76,9 @@ void StateEstimator::estimatePosition_NED(LanderState& state, const SensorMeasur
 void StateEstimator::estimateVelocity_EULER(LanderState& state, const SensorMeasurements& sensorMeasurements)
 {
     // use gyroscope data to estimate angular velocity in Euler angles
-    float GyroX = sensorMeasurements.vn300_data.yprLinearAccelGyro.GyroX;
-    float GyroY = sensorMeasurements.vn300_data.yprLinearAccelGyro.GyroY;
-    float GyroZ = sensorMeasurements.vn300_data.yprLinearAccelGyro.GyroZ;   
+    float GyroX = sensorMeasurements.vn300_data.ybaLinearAccelGyro.GyroX;
+    float GyroY = sensorMeasurements.vn300_data.ybaLinearAccelGyro.GyroY;
+    float GyroZ = sensorMeasurements.vn300_data.ybaLinearAccelGyro.GyroZ;   
     state.angularVelocity.Roll_SI = GyroX;
     state.angularVelocity.Pitch_SI = GyroY;
     state.angularVelocity.Yaw_SI = GyroZ;
@@ -89,9 +89,9 @@ void StateEstimator::estimateVelocity_EULER(LanderState& state, const SensorMeas
 void StateEstimator::estimateAttitude_EULER(LanderState& state, const SensorMeasurements& sensorMeasurements)
 {
     // use VN300 data to estimate attitude in Euler angles
-    float Yaw = sensorMeasurements.vn300_data.yprLinearAccelGyro.Yaw + yawZeroOffset; // apply yaw zero offset
-    float Pitch = sensorMeasurements.vn300_data.yprLinearAccelGyro.Pitch;
-    float Roll = sensorMeasurements.vn300_data.yprLinearAccelGyro.Roll;
+    float Yaw = sensorMeasurements.vn300_data.ybaLinearAccelGyro.Yaw + yawZeroOffset; // apply yaw zero offset
+    float Pitch = sensorMeasurements.vn300_data.ybaLinearAccelGyro.Pitch;
+    float Roll = sensorMeasurements.vn300_data.ybaLinearAccelGyro.Roll;
     state.attitude.Roll_SI = Roll;
     state.attitude.Pitch_SI = Pitch;
     state.attitude.Yaw_SI = Yaw;

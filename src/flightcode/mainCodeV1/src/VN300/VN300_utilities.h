@@ -33,6 +33,7 @@ inline int VN300Utilities::getHeader(const char* incomingData)
 {
     if (strstr(incomingData, "$VNYPR") != nullptr) return 1;
     if (strstr(incomingData, "$VNYIA") != nullptr) return 240;
+    if (strstr(incomingData, "$VNYBA") != nullptr) return 239;
     if (strstr(incomingData, "$VNRRG,58,") != nullptr) return 58;
 
     return -1;
