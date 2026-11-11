@@ -182,6 +182,13 @@
         return;
     }
 
+    if (header == "TGL_CTRL_PER")
+    {
+        setOKFeedback(header);
+        flight_manager->getTelemetryManager().toggle_CONTROLLER_periodic();
+        return;
+    }
+
     if (header == "DISARM")
     {
         setOKFeedback(header);

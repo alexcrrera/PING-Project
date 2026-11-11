@@ -47,6 +47,18 @@ namespace CommsConfig {
     };
 
 
+    constexpr SerialPortConfig CONTROLLER = {
+        .port = &Serial4,
+        .baudrate = 115200,
+        .name = "CONTROLLER COMMS",
+        .input_enabled = true,
+        .output_enabled = true,
+        .periodic_output_enabled = true,
+        .frequency = 10.0f,
+        .outputType = SerialOutputType::GROUP_FORMAT,
+        .bufferSize = 100
+    };
+
     constexpr SerialPortConfig USB = {
         .port = &Serial2, /// unused, but still initialized to avoid conflicts
         .baudrate = 115200,
@@ -132,3 +144,6 @@ static_assert(
     ),
     "USB frequency is out of range."
 );
+static_assert(isBaudrateAllowed(CommsConfig::CONTROLLER.baudrate), "CONTROLLER baudrate is not allowed.");
+static_assert(Utilities::isBounded(CommsConfig::CONTROLLER.frequency, frequencyConfig.min, frequencyConfig.max),
+              "CONTROLLER frequency is out of range.");

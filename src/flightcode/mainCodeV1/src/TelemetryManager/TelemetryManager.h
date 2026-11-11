@@ -39,10 +39,13 @@ public:
 
     void toggle_USB_periodic();
     void toggle_RADIO_periodic();
+    void toggle_CONTROLLER(bool enable);
+    void toggle_CONTROLLER_periodic();
 
 
     void send_USB_String(const String& content,bool jumpToNextLine = false);
     void send_RADIO_String(const String& content,bool jumpToNextLine = false    );
+    void send_CONTROLLER_String(const String& content, bool jumpToNextLine = false);
 
 
     void send_USB_debug_payload(){send_USB_String(get_debug_payload(),true);}
@@ -59,6 +62,7 @@ private:
 
     Stream* USB_port = &Serial;
     HardwareSerial* RADIO_port = CommsConfig::RADIO.port;
+    HardwareSerial* CONTROLLER_port = CommsConfig::CONTROLLER.port;
 
     Handler USB_output_handler;
     Handler RADIO_output_handler;
@@ -73,6 +77,7 @@ private:
     void handleInput();
     void handle_USB_input();
     void handle_RADIO_input();
+    void handle_CONTROLLER_input();
 
 
 
@@ -88,6 +93,7 @@ private:
 
     uint32_t USB_last_output_time = 0;
     uint32_t RADIO_last_output_time = 0;
+    uint32_t CONTROLLER_last_output_time = 0;
 
 
     // --------------------------------------------------------
@@ -96,6 +102,7 @@ private:
 
     SerialOutputType USB_output_type = CommsConfig::USB.outputType;
     SerialOutputType RADIO_output_type = CommsConfig::RADIO.outputType;
+    SerialOutputType CONTROLLER_output_type = CommsConfig::CONTROLLER.outputType;
 
 
     // --------------------------------------------------------
@@ -119,6 +126,9 @@ private:
 
     char incomingDataUSB[CommsConfig::USB.bufferSize];
     char incomingDataRADIO[CommsConfig::RADIO.bufferSize];
+    char incomingDataCONTROLLER[CommsConfig::CONTROLLER.bufferSize];
+    int dataIndexCONTROLLER = 0;
+    bool controllerInputOverflow = false;
 
 
     bool USB_output_enabled = CommsConfig::USB.output_enabled;
@@ -133,6 +143,10 @@ private:
 
     bool USB_output_initialized = false;
     bool RADIO_output_initialized = false;
+    bool CONTROLLER_output_initialized = false;
+    bool CONTROLLER_output_enabled = CommsConfig::CONTROLLER.output_enabled;
+    bool CONTROLLER_input_enabled = CommsConfig::CONTROLLER.input_enabled;
+    bool CONTROLLER_periodic_output_enabled = CommsConfig::CONTROLLER.periodic_output_enabled;
 
     struct GroupEntry
     {

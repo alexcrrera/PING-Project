@@ -131,6 +131,13 @@ void TelemetryManager::begin()
 
         send_RADIO_String("INIT RADIO OK",true);
     }
+    if (CommsConfig::CONTROLLER.enabled)
+    {
+        CONTROLLER_port->begin(CommsConfig::CONTROLLER.baudrate);
+        CONTROLLER_output_initialized = true;
+        send_CONTROLLER_String("INIT CONTROLLER OK", true);
+    }
+
 }
 
 
@@ -144,7 +151,11 @@ void TelemetryManager::send_group(const GroupEntry* group)
         RADIO_output_type == SerialOutputType::GROUP_FORMAT &&
         RADIO_output_enabled && RADIO_output_initialized && RADIO_periodic_output_enabled;
 
-    if (!sendUSB && !sendRadio)
+    const bool sendController = config.enabled_for_CONTROLLER &&
+        CONTROLLER_output_type == SerialOutputType::GROUP_FORMAT &&
+        CONTROLLER_output_enabled && CONTROLLER_output_initialized && CONTROLLER_periodic_output_enabled;
+
+    if (!sendUSB && !sendRadio && !sendController)
     {
         return;
     }
@@ -162,6 +173,10 @@ void TelemetryManager::send_group(const GroupEntry* group)
     if (sendRadio)
     {
         send_RADIO_String(payload, true);
+    }
+    if (sendController)
+    {
+        send_CONTROLLER_String(payload, true);
     }
 }
 
@@ -218,16 +233,25 @@ void TelemetryManager::update(uint32_t now)
             if (RADIO_output_type ==SerialOutputType::HUMAN_READABLE){
                 
                 send_RADIO_String(get_debug_payload(),false);
-                return;
             }
 
             if (RADIO_output_type ==SerialOutputType::BASE_STATION_FORMAT){
                 
                 send_RADIO_String(get_telemetry_payload(),false);
-                return;
             }
-            return;
-            
+        }
+    }
+
+    if (CONTROLLER_output_initialized && CONTROLLER_periodic_output_enabled &&
+        now - CONTROLLER_last_output_time >= static_cast<uint32_t>(1000.0f / CommsConfig::CONTROLLER.frequency))
+    {
+        CONTROLLER_last_output_time = now;
+        if (CONTROLLER_output_enabled)
+        {
+            if (CONTROLLER_output_type == SerialOutputType::HUMAN_READABLE)
+                send_CONTROLLER_String(get_debug_payload(), false);
+            else if (CONTROLLER_output_type == SerialOutputType::BASE_STATION_FORMAT)
+                send_CONTROLLER_String(get_telemetry_payload(), false);
         }
     }
 }
@@ -242,9 +266,14 @@ void TelemetryManager::handleInput()
         handle_USB_input();
     }
 
-    if (RADIO_input_enabled)
+    if (RADIO_input_enabled && RADIO_output_initialized)
     {
         handle_RADIO_input();
+    }
+
+    if (CONTROLLER_input_enabled && CONTROLLER_output_initialized)
+    {
+        handle_CONTROLLER_input();
     }
 }
 
@@ -308,6 +337,49 @@ void TelemetryManager::handle_RADIO_input()
             }
         }
     }
+}
+
+void TelemetryManager::handle_CONTROLLER_input()
+{
+    while (CONTROLLER_port->available() > 0)
+    {
+        char incomingChar = CONTROLLER_port->read();
+        if (incomingChar == '\n' || incomingChar == '\r')
+        {
+            if (!controllerInputOverflow && dataIndexCONTROLLER > 0)
+            {
+                incomingDataCONTROLLER[dataIndexCONTROLLER] = '\0';
+                flightManager->getCommandHandler().consumeIncomingCommand(String(incomingDataCONTROLLER));
+            }
+            dataIndexCONTROLLER = 0;
+            controllerInputOverflow = false;
+        }
+        else if (!controllerInputOverflow)
+        {
+            if (dataIndexCONTROLLER < CommsConfig::CONTROLLER.bufferSize - 1)
+                incomingDataCONTROLLER[dataIndexCONTROLLER++] = incomingChar;
+            else
+                controllerInputOverflow = true;
+        }
+    }
+}
+
+void TelemetryManager::send_CONTROLLER_String(const String& content, bool jumpToNextLine)
+{
+    if (!CONTROLLER_output_enabled || !CONTROLLER_output_initialized) return;
+    CONTROLLER_port->print(content);
+    if (jumpToNextLine) CONTROLLER_port->print("\n");
+}
+
+void TelemetryManager::toggle_CONTROLLER(bool enable)
+{
+    CONTROLLER_output_enabled = CONTROLLER_output_initialized && enable;
+}
+
+void TelemetryManager::toggle_CONTROLLER_periodic()
+{
+    if (CONTROLLER_output_initialized)
+        CONTROLLER_periodic_output_enabled = !CONTROLLER_periodic_output_enabled;
 }
 
 void TelemetryManager::send_RADIO_String(const String& content,bool jumpToNextLine)
