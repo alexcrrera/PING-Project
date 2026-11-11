@@ -3,9 +3,9 @@
 
 #include <Arduino.h>
 #include "../Lander/Lander.h"
-#include "../Mission/Mission.h"
+
 #include "../MotorManager/MotorManager.h"
-#include "../Controller/Controller.h"
+
 
 
 
@@ -40,8 +40,8 @@ public:
   
     // getters for main components
     Lander& getLander(){return lander;}
-    Controller& getController(){return controller;}
-    Mission& getMission(){return mission;}
+
+
     TelemetryManager& getTelemetryManager(){return telemetry_manager;}
     MotorManager& getMotorManager(){return motor_manager;}
     StateMachine& getStateMachine(){return state_machine;}
@@ -55,8 +55,8 @@ public:
 
 private:
     Lander lander; // state of the vehicule
-    Controller controller; // outputs corrections
-    Mission mission; // sets setpoints
+  
+
     MotorManager motor_manager; // owns EDF and servo vanes
     TelemetryManager telemetry_manager; // manages telemetry output
     StateMachine state_machine; // manages the state of the flight

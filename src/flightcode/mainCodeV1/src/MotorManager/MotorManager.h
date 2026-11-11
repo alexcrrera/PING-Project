@@ -11,7 +11,7 @@
 
 #include "../Utilities/Utilities.h"
 #include "../Config/ActuatorsConfig.h"
-#include "../Config/ControllerConfig.h"
+
 #include "../Config/SystemConfig.h"
 
 #include <Handler.h>
@@ -70,11 +70,7 @@ class MotorManager {
 
             ActuatorsCommand current_actuator_command; // stores the current actuator command for reference
 
-            ActuatorsCommand controlCmdToActuatorsCmd(const ControlCommand& command);
-            float tau_pitch_to_alpha_deg(float tau_pitch);
-            float tau_roll_to_beta_deg(float tau_roll);
-            float tau_yaw_to_gamma_deg(float tau_yaw);
-        };
 
+    };
 
 #endif

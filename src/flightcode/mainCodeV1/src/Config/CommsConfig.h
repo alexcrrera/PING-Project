@@ -37,7 +37,7 @@ namespace CommsConfig {
 
     constexpr SerialPortConfig RADIO = {
         .port = &Serial5,
-        .baudrate = 115200,
+        .baudrate = 57600,
         .name = "MAIN COMMS",
         .input_enabled = true,
         .output_enabled = true,

@@ -50,12 +50,6 @@
     }
     
 
-    if(header == "NEXT_WP"){
-        setOKFeedback(header);
-        Serial.println("Next waypoint command received");
-        flight_manager->getMission().advanceWaypoint();
-        return;
-    }
 
 
     if (header == "LINE"){
@@ -98,40 +92,9 @@
         return;
     }
 
-    if (header == "LAUNCH")
-    {
-        setOKFeedback(header);
-        flight_manager->getStateMachine().requestStateChange(STATE_MACHINE_STATES::LAUNCH);
-        Serial.println("Launch command received");
-        
-        flight_manager->getTelemetryManager().send_USB_debug_payload();
-        return;
-    }
 
+  
 
-    if(header == "ABORT_LAUNCH")
-    {
-        setOKFeedback(header);
-        auto& mission = flight_manager->getMission();
-        
-        mission.forceLand(); // force the mission to go to the landing waypoint, regardless of the current state
-        Serial.println("Abort launch command received");
-        return;
-    }
-
-    if (header == "ABORT")
-    {
-        setOKFeedback(header);
-        Serial.println("Abort command received");
-        return;
-    }
-
-    if (header == "LAND")
-    {
-        setOKFeedback(header);
-        Serial.println("Land command received");
-        return;
-    }
 
     if (header == "RESET")
     {

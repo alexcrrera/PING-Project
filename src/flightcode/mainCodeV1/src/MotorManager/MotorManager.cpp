@@ -23,22 +23,19 @@ void MotorManager::begin(FlightManager* fm){
 
 
 void MotorManager::update(){
-    // converts ControlCommand into ActuatorCommand
-
+ 
     if(flight_manager == nullptr){
         // flight manager is not set, cannot proceed
         Serial.println("MotorManager: FlightManager not set, cannot update actuators.");
         return;
     }
 
-    auto command = flight_manager->getController().getControlCmd();
+   
     auto overrideFlags = flight_manager->getFlightGuard().overrideFlags;
-
     toggleESC(overrideFlags.EDF_enabled);
     toggleVanes(overrideFlags.TVC_enabled);
 
-    current_actuator_command =controlCmdToActuatorsCmd(command);
-
+   
     EDF_handler.handle(); // calls the update function at the specified frequency
     vanes_handler.handle(); // calls the update function at the specified frequency
 
@@ -82,34 +79,5 @@ void MotorManager::actuate_vanes(){
     }
 }
 
-
-
-
-ActuatorsCommand MotorManager::controlCmdToActuatorsCmd(const ControlCommand& command) {
-
-    float alpha_deg = constrain(tau_pitch_to_alpha_deg(command.tau_pitch),-ActuatorsConfig::TVC_PITCH_ROLL_AUTHORITY_BUDGET_deg,ActuatorsConfig::TVC_PITCH_ROLL_AUTHORITY_BUDGET_deg);
-
-    float beta_deg = constrain(tau_roll_to_beta_deg(command.tau_roll),-ActuatorsConfig::TVC_PITCH_ROLL_AUTHORITY_BUDGET_deg,ActuatorsConfig::TVC_PITCH_ROLL_AUTHORITY_BUDGET_deg);
-
-    float gamma_deg = constrain(tau_yaw_to_gamma_deg(command.tau_yaw),-ActuatorsConfig::TVC_YAW_AUTHORITY_BUDGET_deg,ActuatorsConfig::TVC_YAW_AUTHORITY_BUDGET_deg);
-
-    
-
-    // temporarily disable yaw control
-    //gamma_deg = 0.0f; // temporarily disable yaw control
-
-    float thrust_percentage = 100.0f * command.thrust_N / ActuatorsConfig::THRUST_EDF_max;
-    thrust_percentage = constrain(thrust_percentage, ActuatorsConfig::ESC_thrust_min_percentage, ActuatorsConfig::ESC_thrust_max_percentage);
-
-    ActuatorsCommand cmd_output{
-        .vaneX1_deg = (alpha_deg - gamma_deg),
-        .vaneX2_deg = (alpha_deg + gamma_deg),
-        .vaneY1_deg = (beta_deg - gamma_deg),
-        .vaneY2_deg = (beta_deg + gamma_deg),
-        .thrust_percentage = thrust_percentage
-    };
-
-    return cmd_output;
-}
 
 

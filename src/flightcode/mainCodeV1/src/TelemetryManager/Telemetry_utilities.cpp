@@ -125,10 +125,3 @@ void TelemetryUtilities::addTelemetryGroup(String& payload, const Rotation_Euler
 
 
 
-void TelemetryUtilities::addDebugGroup(String& payload ,const ControlCommand cmd){
-     addDebugField(payload, "tau_yaw", cmd.tau_yaw);
-    addDebugField(payload, "tau_pitch", cmd.tau_pitch);
-    addDebugField(payload, "tau_roll", cmd.tau_roll);
-    addDebugField(payload, "thrust", cmd.thrust_N);
-
-}

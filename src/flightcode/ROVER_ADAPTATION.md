@@ -16,14 +16,14 @@ before assigning pins or motor limits.
 
 | Leonidas code | Rover use |
 | --- | --- |
-| `FlightManager` update structure | Replace with `RoverManager` and a defined, timed sensor/command/estimator/controller/output loop. |
+| `FlightManager` update structure | Replace with `RoverManager` and a defined, timed sensor/command/estimator/output loop. |
 | `TelemetryManager` serial framing and port handling | Rework into a versioned rover protocol with command sequence numbers, timestamps, validation, and acknowledgements. |
 | `VN300`, `Lidar`, `OpticalFlow` drivers | Reuse only if the rover has those exact devices and electrical interfaces. Add measurement timestamps, timeouts, and rover coordinate transforms. |
 | `PID` implementation | Reuse after checking timing, output limits, integrator reset, and saturation behavior with wheel speed control. |
 | `StateMachine` concept | Replace flight states with `BOOT`, `DISARMED`, `READY`, `DRIVING`, and `FAULT`. |
 | `FlightGuard` concept | Replace flight bounds with rover interlocks and make its result gate every motor output. |
 
-The flight `Controller`, `Mission`, `MotorManager`, `ActuatorPWM`, and aerodynamic
+The flight `ctrler`, `MotorManager`, `ActuatorPWM`, and aerodynamic
 configuration are not rover implementations. They target one EDF ESC and four
 vane servos, not four bidirectional wheel drives.
 
@@ -54,7 +54,7 @@ vane servos, not four bidirectional wheel drives.
 ```
 direct command link ----> validated command + heartbeat ----┐
 4 encoders -----------┐                                       |
-4 current sensors ----+--> timestamped samples --> estimator + drive controller
+4 current sensors ----+--> timestamped samples --> estimator + drive ctroler
 IMU ------------------+                          |            |
 optical flow + range -┘                          |            v
                                           velocity / slip   4 wheel outputs
@@ -75,10 +75,7 @@ torque and detect traction changes. Torque predicts acceleration, but cannot
 recover an unknown constant ground velocity by itself. Integrate the estimated
 velocity for local position, with uncertainty growing when flow is unavailable.
 
-The controller should convert throttle/steer into left/right targets, then four
-wheel commands with per-wheel limits. Start with manual drive and conservative
-current limits. Add traction control only after the estimator and motor drivers
-are validated against measured ground speed.
+
 
 ## Safety and integration gates
 

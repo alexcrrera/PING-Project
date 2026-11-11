@@ -14,13 +14,10 @@ String TelemetryManager::get_debug_payload()
     Lander& lander = flightManager->getLander();
    // const LanderState& state  = lander.getState();
 
-    TelemetryUtilities::addDebugTitle(payload, "MOTORMANAGER DEBUG");
-    payload += flightManager->getMotorManager().actuatorsCmdToString();
+ 
     TelemetryUtilities::addDebugGroup(payload, "FLIGHT MANAGER DEBUG");
     payload += flightManager->debug_text;
 
-    TelemetryUtilities::addDebugTitle(payload, "TAU DEBUG");
-    payload += flightManager->getController().controllerCmdToString();
 
     // attitude debug text
    // TelemetryUtilities::addDebugGroup(payload, "ATTITUDE DEBUG");
@@ -37,9 +34,7 @@ String TelemetryManager::get_debug_payload()
     //payload += TelemetryUtilities::getFlightRegimeDataAsString(current_regime);
     
 
-    // Mission debug text
-    //::addDebugGroup(payload, "MISSION DEBUG");
-    //payload += flightManager->getMission().getMissionDataAsString();
+  
 //
 
     // FlightGuard debug text
@@ -47,17 +42,12 @@ String TelemetryManager::get_debug_payload()
    // TelemetryUtilities::addDebugGroup(payload, flightManager->getFlightGuard().getFlightGuardStatus());
 
     // // target data:
-    // TelemetryUtilities::addDebugGroup(payload, "MISSION TARGET");
-    // auto target = flightManager->getMission().getTarget();
+
     // TelemetryUtilities::addDebugGroup(payload, target.target.positionNED, "POSITION NED");
     // TelemetryUtilities::addDebugField(payload,"Yaw", String(target.target.yaw_deg));
     
     // auto state = lander.getState();
     // TelemetryUtilities::addDebugGroup(payload, state.position, "POSITION NED");
-        
-    // TelemetryUtilities::addDebugGroup(payload, "CMD");
-    //   auto cmd = flightManager->getController().getControlCmd();
-    //     TelemetryUtilities::addDebugGroup(payload,cmd );
 
 
     // TelemetryUtilities::addDebugGroup(payload, "STATUS");
