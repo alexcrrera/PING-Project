@@ -1,4 +1,4 @@
-"""Receive-only USB serial telemetry for rover groups and legacy JSON frames."""
+"""USB serial telemetry and explicit gimbal commands."""
 
 import json
 from collections import deque
@@ -120,8 +120,8 @@ class SerialTelemetrySource:
     """Nonblocking reads, bounded buffering, and timed reconnects at 57600 baud.
 
     ``serial_factory`` is injectable for hardware-free tests. Opening a port is
-    delegated to the OS/driver; read/write timeouts are zero. This class never
-    calls ``write`` and sends no robot commands.
+    delegated to the OS/driver; read/write timeouts are zero. Gimbal commands
+    are sent only through an explicit user action.
     """
 
     def __init__(self, port: str, *, baudrate: int = 57600,
@@ -168,6 +168,32 @@ class SerialTelemetrySource:
         """Read recent completed lines using a cursor local to each dashboard."""
         count = min(self._raw_line_count - cursor, len(self._raw_log))
         return self._raw_line_count, tuple(self._raw_log)[-count:] if count > 0 else ()
+
+    def send_gimbal_command(self, command: str) -> bool:
+        """Send one explicit gimbal command over the open rover link."""
+        if self._closed or self._serial is None:
+            self.error = "Command failed: serial port is not connected"
+            return False
+        if not command.isascii() or "\n" in command or "\r" in command or len(command) > 29:
+            raise ValueError("Invalid gimbal command")
+        payload = (command + "\n").encode("ascii")
+        try:
+            if self._serial.write(payload) != len(payload):
+                raise OSError("Incomplete serial write")
+        except (OSError, ValueError) as exc:
+            self.error = f"Command failed: {exc}"
+            self._drop_connection()
+            return False
+        self.error = None
+        return True
+
+    def send_rover_command(self, command: str) -> bool:
+        """Send one drive or button frame on the current rover connection."""
+        if not (command.startswith("DRIVE:") or command.startswith("STICK:")
+                or command.startswith("BUTTON:") or command.startswith("LEFT:")
+                or command.startswith("TRIG:")):
+            raise ValueError("Unknown rover command")
+        return self.send_gimbal_command(command)
 
     def poll(self, now: float) -> tuple[TelemetrySample, ...]:
         if self._closed:

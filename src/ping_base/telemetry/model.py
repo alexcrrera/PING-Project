@@ -45,6 +45,8 @@ class RoverTelemetrySample(TelemetrySample):
     altitude_m: float | None = None
     gimbal_pitch_deg: float | None = None
     gimbal_pan_deg: float | None = None
+    gimbal_mode: int | None = None
+    gimbal_lidar_distance_m: float | None = None
     gimbal_distance_1_m: float | None = None
     gimbal_distance_2_m: float | None = None
     gimbal_validity: int | None = None
@@ -113,8 +115,8 @@ class TelemetrySource(Protocol):
 
     A transport being open does not mean that fresh telemetry has arrived.
     Sources must stamp samples with the supplied ``now`` clock domain, never a
-    robot clock or wall time. The ordinary telemetry adapter is receive-only;
-    explicit radio bench mode sends provisional text commands for link testing.
+    robot clock or wall time. The ordinary telemetry adapter can send explicit
+    gimbal commands. The explicit radio bench mode sends provisional text commands for link testing.
     """
 
     name: str

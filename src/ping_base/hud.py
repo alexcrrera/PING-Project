@@ -11,10 +11,11 @@ _PIXELS_PER_DEGREE = 2.3
 _HUD_GREEN = "#5dff55"
 
 
-def range_readout(distance_m: float | None) -> str:
-    """The 10 m camera-aligned sensor uses a missing return beyond its limit."""
+def range_readout(distance_m: float | None, *, max_distance: float | None = 10.0) -> str:
+    """Format a valid range, optionally applying the simulated sensor limit."""
     if (isinstance(distance_m, bool) or not isinstance(distance_m, (int, float))
-            or not isfinite(distance_m) or not 0 <= distance_m <= 10):
+            or not isfinite(distance_m) or distance_m < 0
+            or (max_distance is not None and distance_m > max_distance)):
         return "---- m"
     return f"{distance_m:.2f} m"
 
@@ -98,7 +99,7 @@ def gimbal_indicator(pose: GimbalPose) -> str:
     )
 
 
-_RETICLE_GEOMETRY = '<path d="M62 60H98M80 42V78"/>'
+_RETICLE_GEOMETRY = '<path d="M16 38H144V82H16Z M16 60H22 M138 60H144 M80 38V44 M80 76V82 M74 55H86V65H74Z"/><circle cx="80" cy="60" r="1.5"/>'
 
 TACTICAL_RETICLE = (
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120" '

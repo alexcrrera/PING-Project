@@ -43,13 +43,14 @@ def _decode_fields(group: str, fields: tuple[str, ...]) -> dict:
                 "altitude_m": altitude if valid else None}
 
     if group == "GMBL":
-        distance1, distance2, validity, mode, _, pan, tilt = _numbers(fields, 7)
+        distance1, distance2, validity, mode, lidar, pan, tilt = _numbers(fields, 7)
         if validity not in range(4) or mode not in range(3):
             raise ValueError("Invalid gimbal validity mask or mode")
         mask = int(validity)
-        if (mask & 1 and distance1 < 0) or (mask & 2 and distance2 < 0):
+        if lidar < 0 or (mask & 1 and distance1 < 0) or (mask & 2 and distance2 < 0):
             raise ValueError("Valid gimbal distances must be nonnegative")
-        return {"gimbal_pan_deg": pan, "gimbal_pitch_deg": tilt,
+        return {"gimbal_pan_deg": pan, "gimbal_pitch_deg": tilt, "gimbal_mode": int(mode),
+                "gimbal_lidar_distance_m": lidar if mask else None,
                 "gimbal_distance_1_m": distance1 if mask & 1 else None,
                 "gimbal_distance_2_m": distance2 if mask & 2 else None,
                 "gimbal_validity": mask}

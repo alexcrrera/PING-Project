@@ -1,8 +1,28 @@
 # Serial telemetry protocol
 
-Use **USB / serial receive only** in the dashboard with the receiving radio at
+Use **USB / serial telemetry and gimbal** in the dashboard with the receiving radio at
 **57600 baud**, 8 data bits, no parity, and 1 stop bit. **Radio Link** shows the
-port status, byte count, and last received line. This source sends no commands.
+port status, byte count, and last received line. Gimbal controls send explicit
+newline-terminated `GIMBAL_MODE:<0|1|2>`, `GIMBAL_AIM:<pan>,<tilt>`, and
+`GIMBAL_HOME:` commands. Angles are degrees relative to the rover body.
+
+## Drive commands
+
+The serial source sends `DRIVE:<throttle>,<steering>,<brake>\n`,
+`STICK:<pan>,<tilt>\n`, `LEFT:<x>,<y>\n` and `TRIG:<l2>,<r2>\n` at approximately 25 Hz.
+LEFT uses positive Y down. Trigger values are 0 to 1. Axes are normalized to
+[-1, 1], with positive steering and pan to the right and positive tilt up.
+The brake value is 0 or 1. Keyboard W/S and A/D control throttle and steering.
+The PS4 uses R2 for throttle, L2 for brake, left-stick X for steering, and
+right-stick X/Y for pan/tilt input.
+
+PS4 button down events are sent once as `BUTTON:<name>\n`. The keyboard B
+key and PS4 Options button send `BUTTON:BRAKE\n` on each press. The
+CommandHandler exposes the latest button and an event sequence counter.
+
+`getDriveInput()` exposes the latest command to firmware. After 500 ms without
+a DRIVE frame, it returns zero axes and brake enabled. The drive motor
+controller must consume this state.
 
 ## Rover groups
 
@@ -78,7 +98,7 @@ invalid wheel counts, and out-of-range values reject the entire packet. Packets
 over 4096 bytes are discarded up to the next newline. The next valid packet
 recovers automatically. Serial reads are capped at 8192 bytes per application
 update, with nonblocking `timeout=0`, and reconnect attempts occur every 2 s.
-No data is written to the port. OS port-open duration remains driver-dependent.
+OS port-open duration remains driver-dependent.
 
 `TelemetryManager` reports `connected` only after a validated packet. After 1 s
 without one, status becomes `stale` and `state.sample` becomes `None`; an open

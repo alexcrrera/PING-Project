@@ -43,8 +43,11 @@ class CameraFilterSettings:
     thermal: bool = False
     scanlines: bool = False
     vision_strength: int = 75
+    rotation: int = 0
 
     def __post_init__(self) -> None:
+        if self.rotation not in (0, 90, 180, 270):
+            raise ValueError("Camera rotation must be 0, 90, 180 or 270 degrees")
         if self.view not in VIEW_MODES:
             raise ValueError("Choose a supported camera view")
         for value in (self.sensitivity, self.opacity, self.vision_strength):
@@ -63,7 +66,7 @@ class CameraFilterSettings:
 
     @property
     def is_passthrough(self) -> bool:
-        return not (self.denoise or self.sharpen or self.contrast_enabled or self.invert or self.scanlines
+        return not (self.rotation or self.denoise or self.sharpen or self.contrast_enabled or self.invert or self.scanlines
                     or self.edges_enabled and self.opacity > 0
                     or self.vision_strength > 0 and any(getattr(self, name) for name in VISION_EFFECTS))
 
@@ -71,6 +74,9 @@ class CameraFilterSettings:
 def apply_filters(image: np.ndarray, settings: CameraFilterSettings) -> np.ndarray:
     """Return a filtered BGR image without modifying the source array."""
     result = image.copy()
+    if settings.rotation:
+        result = cv2.rotate(result, {90: cv2.ROTATE_90_CLOCKWISE, 180: cv2.ROTATE_180,
+                                     270: cv2.ROTATE_90_COUNTERCLOCKWISE}[settings.rotation])
     if settings.denoise:
         result = cv2.bilateralFilter(result, 5, 35, 35)
     if settings.contrast_enabled:

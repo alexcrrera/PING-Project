@@ -27,7 +27,7 @@ const target = kind => ({closest:selector => kind && selector.includes(kind) ? {
 const document = new Target();
 const window = new Target();
 const events = [];
-const dataset = {mode:'keyboard', enabled:'true', gimbal:'true'};
+const dataset = {mode:'keyboard', enabled:'true', gimbal:'true', stabilization:'true'};
 let focus = true;
 let dialog = false;
 let heartbeat;
@@ -51,6 +51,17 @@ const count = () => events.filter(event => event.name === 'map_toggle').length;
 
 @unittest.skipUnless(NODE, "Node is optional; required only to execute the browser shortcut bridge")
 class KeyboardMapTests(unittest.TestCase):
+    def test_stabilization_shortcut_works_without_virtual_camera(self):
+        self.run_javascript("""
+            dataset.gimbal = 'false';
+            press({code:'KeyZ'});
+            press({code:'KeyZ', repeat:true});
+            assert.equal(events.filter(event => event.name === 'camera_stabilization').length, 1);
+            dataset.stabilization = 'false';
+            press({code:'KeyZ'});
+            assert.equal(events.filter(event => event.name === 'camera_stabilization').length, 1);
+        """)
+
     def test_zoom_keys_do_not_steer_and_shortcuts_do_not_repeat(self):
         self.run_javascript(r"""
             for (const [code, name] of [['ArrowRight','camera_zoom_in'],

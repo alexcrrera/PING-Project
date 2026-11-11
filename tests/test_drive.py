@@ -160,7 +160,7 @@ class ReceivingOnlyPort:
         wire.pop("received_at")
         wire["schema"] = "ping.telemetry.v1"
         self.data = (json.dumps(wire) + "\n").encode()
-        self.writes = 0
+        self.writes = []
 
     @property
     def in_waiting(self):
@@ -171,8 +171,8 @@ class ReceivingOnlyPort:
         return data
 
     def write(self, data):
-        self.writes += 1
-        raise AssertionError("Telemetry receiver must not transmit drive commands")
+        self.writes.append(data)
+        return len(data)
 
     def close(self):
         pass
@@ -248,7 +248,7 @@ class StationDrivingTests(unittest.TestCase):
         self.assertEqual(self.station.virtual_rover.state.speed_mps, 0)
         self.assertEqual(self.station.drive_command, DriveCommand(source="dualshock"))
 
-    def test_serial_telemetry_remains_receiving_only_and_blocks_virtual_input(self):
+    def test_serial_telemetry_sends_commands_without_moving_virtual_rover(self):
         port = ReceivingOnlyPort()
         serial = SerialTelemetrySource("COM7", serial_factory=lambda **kwargs: port)
         self.station.replace_telemetry(serial)
@@ -257,13 +257,82 @@ class StationDrivingTests(unittest.TestCase):
         self.assertEqual(self.station.virtual_rover.state, RoverMotion())
         self.assertEqual(self.manager.state.sample.speed_mps, .7)
         self.assertEqual(self.manager.state.sample.heading_deg, 234)
-        self.assertEqual(port.writes, 0)
+        self.assertTrue(any(line.startswith(b"DRIVE:+1.00,+1.00,0") for line in port.writes))
+        self.assertTrue(any(line.startswith(b"STICK:+0.00,+0.00") for line in port.writes))
         self.station.replace_telemetry(SimulatedTelemetrySource())
         self.frames(.3)
         self.assertTrue(self.station.virtual_driving)
         self.assertEqual(self.station.virtual_rover.state.speed_mps, 0)
         self.frames(.5, keyboard=(1, 0))
         self.assertGreater(self.station.virtual_rover.state.speed_mps, .5)
+
+    def test_serial_drive_updates_at_25_hz_and_button_is_one_shot(self):
+        port = ReceivingOnlyPort()
+        source = SerialTelemetrySource("COM7", serial_factory=lambda **kwargs: port)
+        self.station.replace_telemetry(source)
+        for frame in range(201):
+            self.clock.now = frame / 100
+            self.station.drive.keyboard("page-a", .5, -.25, now=self.clock.now)
+            self.station.tick()
+        driveFrames = [line for line in port.writes if line.startswith(b"DRIVE:")]
+        stickFrames = [line for line in port.writes if line.startswith(b"STICK:")]
+        self.assertTrue(49 <= len(driveFrames) <= 51, len(driveFrames))
+        self.assertEqual(len(driveFrames), len(stickFrames))
+        self.assertIn(b"DRIVE:+0.50,-0.25,0\n", driveFrames)
+        self.station.toggle_brake()
+        self.assertEqual(port.writes.count(b"BUTTON:BRAKE\n"), 1)
+
+    def test_serial_ps4_press_is_sent_once_while_sticks_continue(self):
+        port = ReceivingOnlyPort()
+        source = SerialTelemetrySource("COM7", serial_factory=lambda **kwargs: port)
+        self.station.replace_telemetry(source)
+        self.station.tick()
+        self.station.set_drive_mode("dualshock")
+        self.controller.state = self.controller.model.update(RawInput(connected=True, device_id="pad"))
+        self.station.tick()
+        self.controller.state = self.controller.model.update(
+            RawInput(connected=True, device_id="pad", held=frozenset({Button.CROSS}),
+                     changes=((Button.CROSS, True),), right_stick=Stick(.5, -.25), r2=.7))
+        self.frames(.5)
+        self.assertEqual(port.writes.count(b"BUTTON:CROSS\n"), 1)
+        self.assertTrue(any(line == b"STICK:+0.50,+0.25\n" for line in port.writes))
+        self.assertIn(b"LEFT:+0.00,+0.00\n", port.writes)
+        self.assertIn(b"TRIG:0.00,0.70\n", port.writes)
+        self.assertTrue(any(line == b"DRIVE:+0.70,+0.00,0\n" for line in port.writes))
+
+    def test_serial_stabilization_cycles_from_reported_and_pending_modes(self):
+        port = ReceivingOnlyPort()
+        port.data = b"$RVR,GMBL,0,0,0,2,0,0,0*\n"
+        source = SerialTelemetrySource("COM7", serial_factory=lambda **kwargs: port)
+        self.station.replace_telemetry(source)
+        self.station.tick()
+        self.assertEqual(self.station.rover_gimbal_mode, 2)
+
+        self.station.toggle_stabilization()
+        self.station.toggle_stabilization()
+        self.assertEqual([line for line in port.writes if line.startswith(b"GIMBAL_MODE:")],
+                         [b"GIMBAL_MODE:0\n", b"GIMBAL_MODE:1\n"])
+        port.data = b"$RVR,GMBL,0,0,0,1,0,0,0*\n"
+        self.clock.now += .1
+        self.station.tick()
+        self.assertEqual(self.station.rover_gimbal_mode, 1)
+        self.assertIsNone(self.station._requested_gimbal_mode)
+
+    def test_ps4_share_sends_one_stabilization_change(self):
+        port = ReceivingOnlyPort()
+        port.data = b"$RVR,GMBL,0,0,0,2,0,0,0*\n"
+        source = SerialTelemetrySource("COM7", serial_factory=lambda **kwargs: port)
+        self.station.replace_telemetry(source)
+        self.station.tick()
+        self.station.set_drive_mode("dualshock")
+        self.controller.state = self.controller.model.update(RawInput(connected=True, device_id="pad"))
+        self.station.tick()
+        self.controller.state = self.controller.model.update(
+            RawInput(connected=True, device_id="pad", held=frozenset({Button.SHARE}),
+                     changes=((Button.SHARE, True),)))
+        self.frames(.5)
+        self.assertEqual(port.writes.count(b"GIMBAL_MODE:0\n"), 1)
+        self.assertNotIn(b"BUTTON:SHARE\n", port.writes)
 
     def test_radio_bench_routes_keyboard_and_virtual_terrain_to_radio(self):
         port = RadioBenchPort()

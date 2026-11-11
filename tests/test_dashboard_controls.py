@@ -49,7 +49,7 @@ class DashboardControlTests(unittest.TestCase):
         self.page.cycle_map_zoom()
         self.assertEqual(self.page.map_zoom_index, 1)
 
-    def test_rover_camera_uses_body_frame_angles_from_live_telemetry(self):
+    def test_rover_camera_uses_body_frame_for_live_telemetry(self):
         virtualPose = GimbalPose(5, 10, 15)
         self.page.station = SimpleNamespace(gimbal=SimpleNamespace(state=virtualPose))
         self.page.rover = Mock()

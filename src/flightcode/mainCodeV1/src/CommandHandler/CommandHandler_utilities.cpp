@@ -1,14 +1,117 @@
 
 #include "Arduino.h"
+#include <math.h>
+#include <stdlib.h>
 #include "../Utilities/Utilities.h"
 #include "CommandHandler.h"
 #include "../FlightManager/FlightManager.h"
 
     void CommandHandler::parseCommand(String header, String payload)
 {
-    Serial.println("Command received: " + header + " with payload: " + payload + "|");
+    if (header != "DRIVE" && header != "STICK" && header != "LEFT" && header != "TRIG")
+        Serial.println("Command received: " + header + " with payload: " + payload + "|");
 
     
+
+    if (header == "DRIVE" || header == "STICK" || header == "LEFT" || header == "TRIG")
+    {
+        const char* input = payload.c_str();
+        char* end = nullptr;
+        const float first = strtof(input, &end);
+        if (end == input || *end != ',')
+            return;
+        input = end + 1;
+        const float second = strtof(input, &end);
+        if (end == input || !isfinite(first) || !isfinite(second) ||
+            first < -1.0f || first > 1.0f || second < -1.0f || second > 1.0f)
+            return;
+        if (header == "LEFT" || header == "TRIG")
+        {
+            if (*end != '\0' || (header == "TRIG" && (first < 0.0f || second < 0.0f)))
+                return;
+            if (header == "LEFT")
+            {
+                driveInput.leftX = first;
+                driveInput.leftY = second;
+                driveInput.lastLeftTime = millis();
+            }
+            else
+            {
+                driveInput.leftTrigger = first;
+                driveInput.rightTrigger = second;
+                driveInput.lastTriggerTime = millis();
+            }
+            return;
+        }
+        if (header == "STICK")
+        {
+            if (*end != '\0')
+                return;
+            driveInput.cameraPan = first;
+            driveInput.cameraTilt = second;
+            driveInput.lastStickTime = millis();
+            return;
+        }
+        if (*end != ',' || (end[1] != '0' && end[1] != '1') || end[2] != '\0')
+            return;
+        driveInput.throttle = first;
+        driveInput.steering = second;
+        driveInput.brake = end[1] == '1';
+        driveInput.lastDriveTime = millis();
+        driveInput.received = true;
+        return;
+    }
+
+    if (header == "BUTTON")
+    {
+        if (payload.length() > 0 && payload.length() <= 16)
+        {
+            lastButton = payload;
+            ++buttonSequence;
+            if (payload == "CROSS")
+                flight_manager->getGimbal().home();
+        }
+        return;
+    }
+
+    if (header == "GIMBAL_MODE")
+    {
+        if (payload.length() != 1 || payload[0] < '0' || payload[0] > '2' ||
+            !flight_manager->getGimbal().setMode(static_cast<GimbalMode>(payload[0] - '0')))
+            setErrorFeedback("Invalid gimbal mode");
+        else
+            setOKFeedback(header);
+        return;
+    }
+
+    if (header == "GIMBAL_AIM")
+    {
+        const char* input = payload.c_str();
+        char* end = nullptr;
+        float pan = strtof(input, &end);
+        if (end == input || *end != ',')
+        {
+            setErrorFeedback("Invalid gimbal angles");
+            return;
+        }
+        input = end + 1;
+        float tilt = strtof(input, &end);
+        if (end == input || *end != '\0' || !isfinite(pan) || !isfinite(tilt) ||
+            !flight_manager->getGimbal().setAngles(pan, tilt))
+            setErrorFeedback("Invalid gimbal angles");
+        else
+            setOKFeedback(header);
+        return;
+    }
+
+    if (header == "GIMBAL_HOME")
+    {
+        if (flight_manager->getGimbal().home())
+            setOKFeedback(header);
+        else
+            setErrorFeedback("Gimbal reset unavailable");
+        return;
+    }
 
     if(header == "YAW_ZERO"){
         setOKFeedback(header);

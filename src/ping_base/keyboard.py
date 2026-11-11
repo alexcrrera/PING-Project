@@ -16,6 +16,8 @@ KEYBOARD_SCRIPT = r"""
     const mapOpen = () => document.getElementById('virtual-drive-input')?.dataset.mapOpen === 'true';
     const gimbalEnabled = () => shortcutsEnabled()
         && !mapOpen() && document.getElementById('virtual-drive-input')?.dataset.gimbal === 'true';
+    const stabilizationEnabled = () => shortcutsEnabled()
+        && !mapOpen() && document.getElementById('virtual-drive-input')?.dataset.stabilization === 'true';
     const enabled = () => {
         const guard = document.getElementById('virtual-drive-input');
         return guard?.dataset.mode === 'keyboard' && guard?.dataset.enabled === 'true'
@@ -57,7 +59,7 @@ KEYBOARD_SCRIPT = r"""
         const viewShortcut = ['KeyQ','KeyM','ArrowLeft','ArrowRight','Enter','KeyB'].includes(event.code);
         if (viewShortcut || event.code === 'KeyR' || event.code === 'KeyX' || event.code === 'KeyZ' || gimbalCodes.has(event.code)) {
             if (!shortcutsEnabled() || event.ctrlKey || event.altKey || event.metaKey || editable(event.target)) return;
-            if (!viewShortcut && !gimbalEnabled()) return;
+            if (event.code === 'KeyZ' ? !stabilizationEnabled() : !viewShortcut && !gimbalEnabled()) return;
             event.preventDefault();
             event.stopPropagation();
             if (event.repeat) return;

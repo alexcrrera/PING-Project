@@ -165,13 +165,14 @@ class RoverView:
     def _build_mast(self) -> None:
         self._box(.28, .27, .06, 0, .52, .97, self.DARK_COLOR)
         self._box(.083, .083, .59, 0, .52, 1.27, self.METAL_COLOR)
-        with self.scene.group().move(0, .55, 1.61).with_name("Camera pan mount") as self._gimbal_yaw:
-            with self.scene.group().with_name("Camera tilt mount") as self._gimbal_pitch:
-                self._box(.46, .20, .19, 0, 0, 0, self.BODY_COLOR).with_name("Stereo camera mast")
-                self._box(.40, .018, .13, 0, .11, 0, self.DARK_COLOR)
-                for x in (-.13, .13):
-                    self.scene.cylinder(.054, .054, .026, 24).move(x, .13, 0).material("#20271f")
-                    self.scene.cylinder(.030, .030, .031, 20).move(x, .14, 0).material("#788571")
+        with self.scene.group().move(0, .55, 1.61).with_name("Camera reference frame") as self._gimbal_reference:
+            with self.scene.group().with_name("Camera pan mount") as self._gimbal_yaw:
+                with self.scene.group().with_name("Camera tilt mount") as self._gimbal_pitch:
+                    self._box(.46, .20, .19, 0, 0, 0, self.BODY_COLOR).with_name("Stereo camera mast")
+                    self._box(.40, .018, .13, 0, .11, 0, self.DARK_COLOR)
+                    for x in (-.13, .13):
+                        self.scene.cylinder(.054, .054, .026, 24).move(x, .13, 0).material("#20271f")
+                        self.scene.cylinder(.030, .030, .031, 20).move(x, .14, 0).material("#788571")
 
     def update_gimbal(self, pose: GimbalPose) -> None:
         self._gimbal_yaw.rotate(0, 0, -math.radians(pose.yaw_deg))

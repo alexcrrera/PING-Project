@@ -11,7 +11,7 @@ from .controller import Button, ControllerState, PS4Controller
 from .drive import DriveCommand, DriveInputRouter
 from .gimbal import VirtualGimbal
 from .motion import VirtualRover
-from .telemetry import RadioBenchSource, SimulatedTelemetrySource, TelemetryManager
+from .telemetry import RadioBenchSource, SerialTelemetrySource, SimulatedTelemetrySource, TelemetryManager
 
 
 class ControllerService(Protocol):
@@ -43,8 +43,7 @@ class PS4ControllerService:
     """Own SDL on the server main thread, including startup and shutdown.
 
     The hidden SDL window allows the existing adapter to pump device events
-    while the browser has focus. Snapshots may drive the virtual rover; this
-    service has no physical command transport.
+    while the browser has focus. The station routes snapshots to the selected source.
     """
 
     def __init__(self, device_index: int | None = None, deadzone: float = 0.10):
@@ -108,8 +107,11 @@ class BaseStation:
         self.virtual_rover = virtual_rover or VirtualRover()
         self.drive = DriveInputRouter()
         self.drive_command = DriveCommand()
+        self._next_drive_send = 0.0
         self.brake_latched = False
         self.gimbal = VirtualGimbal()
+        self._requested_gimbal_mode = None
+        self._requested_gimbal_at = 0.0
         self.map_toggle_sequence = 0
         self.controller_actions = deque(maxlen=128)
         self.controller_action_sequence = 0
@@ -134,7 +136,7 @@ class BaseStation:
 
     @property
     def drive_input_enabled(self) -> bool:
-        return self.virtual_driving or isinstance(getattr(self.telemetry, "source", None), RadioBenchSource)
+        return self.virtual_driving or type(getattr(self.telemetry, "source", None)) is SerialTelemetrySource
 
     def set_drive_mode(self, mode: str) -> None:
         self.stop_drive()
@@ -152,20 +154,57 @@ class BaseStation:
         source = getattr(self.telemetry, "source", None)
         if isinstance(source, RadioBenchSource):
             source.send_drive(0.0, 0.0, True, time.monotonic(), force=True)
+        elif type(source) is SerialTelemetrySource and source.transport_connected:
+            source.send_rover_command("DRIVE:+0.00,+0.00,1")
+            source.send_rover_command("STICK:+0.00,+0.00")
 
     def toggle_brake(self) -> None:
         if self.drive_input_enabled:
             self.brake_latched = not self.brake_latched
+            source = getattr(self.telemetry, "source", None)
+            if type(source) is SerialTelemetrySource:
+                source.send_rover_command("BUTTON:BRAKE")
             if self.brake_latched:
                 self.drive_command = DriveCommand(source=self.drive.mode)
                 self.virtual_rover.stop()
 
+    @property
+    def rover_gimbal_mode(self) -> int | None:
+        source = getattr(self.telemetry, "source", None)
+        if type(source) is not SerialTelemetrySource or not source.transport_connected:
+            self._requested_gimbal_mode = None
+            return None
+        sample = self.telemetry.state.sample
+        reported = getattr(sample, "gimbal_mode", None)
+        if self._requested_gimbal_mode is not None:
+            if reported == self._requested_gimbal_mode or time.monotonic() - self._requested_gimbal_at > 2.0:
+                self._requested_gimbal_mode = None
+            else:
+                return self._requested_gimbal_mode
+        return reported
+
+    def set_rover_gimbal_mode(self, mode: int) -> bool:
+        source = getattr(self.telemetry, "source", None)
+        if type(source) is not SerialTelemetrySource or mode not in (0, 1, 2):
+            return False
+        if not source.send_gimbal_command(f"GIMBAL_MODE:{mode}"):
+            return False
+        self._requested_gimbal_mode = mode
+        self._requested_gimbal_at = time.monotonic()
+        return True
+
     def toggle_stabilization(self) -> None:
-        if hasattr(self.camera, "set_gimbal"):
+        source = getattr(self.telemetry, "source", None)
+        if type(source) is SerialTelemetrySource:
+            mode = self.rover_gimbal_mode
+            if mode is not None:
+                self.set_rover_gimbal_mode((mode + 1) % 3)
+        elif hasattr(self.camera, "set_gimbal"):
             self.gimbal.cycle_stabilization()
 
     def replace_telemetry(self, source) -> None:
         self.stop_drive()
+        self._requested_gimbal_mode = None
         self.telemetry.replace_source(source)
         self._bind_simulation()
 
@@ -200,6 +239,11 @@ class BaseStation:
             if controller_update != self._last_map_controller_update:
                 self._last_map_controller_update = controller_update
                 if self.drive.mode == "dualshock" and control.connected:
+                    source = getattr(self.telemetry, "source", None)
+                    if type(source) is SerialTelemetrySource:
+                        for button in Button:
+                            if button not in (Button.OPTIONS, Button.L2, Button.R2, Button.SHARE) and control.buttons[button].pressed:
+                                source.send_rover_command(f"BUTTON:{button.name}")
                     if control.buttons[Button.TOUCHPAD].pressed:
                         self.map_toggle_sequence += 1
                     if control.buttons[Button.OPTIONS].pressed:
@@ -212,9 +256,9 @@ class BaseStation:
                         if control.buttons[button].pressed:
                             self.controller_action_sequence += 1
                             self.controller_actions.append((self.controller_action_sequence, action))
+                    if control.buttons[Button.SHARE].pressed:
+                        self.toggle_stabilization()
                     if hasattr(self.camera, "set_gimbal"):
-                        if control.buttons[Button.SHARE].pressed:
-                            self.toggle_stabilization()
                         if control.buttons[Button.CROSS].pressed:
                             self.gimbal.reset()
             self._bind_simulation()
@@ -248,6 +292,22 @@ class BaseStation:
             if isinstance(source, RadioBenchSource):
                 source.send_drive(self.drive_command.throttle, self.drive_command.steering,
                                   self.drive_command.brake, now)
+            elif type(source) is SerialTelemetrySource and now >= self._next_drive_send:
+                self._next_drive_send = max(self._next_drive_send + 0.04, now + 0.001)
+                command = self.drive_command
+                source.send_rover_command(
+                    f"DRIVE:{command.throttle:+.2f},{command.steering:+.2f},{int(command.brake)}")
+                rightStick = control.right_stick if self.drive.mode == "dualshock" and control.connected else None
+                pan = rightStick.x if rightStick else 0.0
+                tilt = -rightStick.y if rightStick else 0.0
+                source.send_rover_command(f"STICK:{pan:+.2f},{tilt:+.2f}")
+                leftStick = control.left_stick if self.drive.mode == "dualshock" and control.connected else None
+                leftX = leftStick.x if leftStick else command.steering
+                leftY = leftStick.y if leftStick else -command.throttle
+                leftTrigger = control.l2 if leftStick else float(command.brake)
+                rightTrigger = control.r2 if leftStick else max(0.0, command.throttle)
+                source.send_rover_command(f"LEFT:{leftX:+.2f},{leftY:+.2f}")
+                source.send_rover_command(f"TRIG:{leftTrigger:.2f},{rightTrigger:.2f}")
 
     def close(self) -> None:
         if self._closed:

@@ -20,7 +20,7 @@ class DriveInputRouter:
     """Select one input source and expire missing browser heartbeats.
 
     A keyboard lease belongs to a browser client, so an idle second tab cannot
-    cancel held controls in the first. There is no physical command transport.
+    cancel held controls in the first.
     """
 
     MODES = ("keyboard", "dualshock")

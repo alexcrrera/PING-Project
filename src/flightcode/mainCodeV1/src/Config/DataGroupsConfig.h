@@ -12,7 +12,7 @@ namespace CommsConfig {
 
     inline constexpr GroupConfig ATVL = {
         .name = "ATVL",
-        .frequency = 15.0f,
+        .frequency = 20.0f,
         .enabled_for_USB = false,
         .enabled_for_RADIO = true,
         .enabled_for_CONTROLLER = false
@@ -20,7 +20,7 @@ namespace CommsConfig {
 
     inline constexpr GroupConfig WSST = {
         .name = "WSST",
-        .frequency = 5.0f,
+        .frequency = 10.0f,
         .enabled_for_USB = false,
         .enabled_for_RADIO = true,
         .enabled_for_CONTROLLER = false
@@ -44,7 +44,7 @@ namespace CommsConfig {
 
     inline constexpr GroupConfig GMBL = {
         .name = "GMBL",
-        .frequency = 0.5f,
+        .frequency = 10.0f,
         .enabled_for_USB = false,
         .enabled_for_RADIO = true,
         .enabled_for_CONTROLLER = false

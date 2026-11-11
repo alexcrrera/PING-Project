@@ -13,6 +13,7 @@ class RoverViewTests(unittest.TestCase):
     def make_view(self):
         view = object.__new__(RoverView)
         view.body = Mock()
+        view._gimbal_reference = Mock()
         view._ground = Mock()
         view._wheels = [Mock() for _ in range(4)]
         view._wheel_angles = [0.0] * 4
@@ -68,6 +69,7 @@ class RoverViewTests(unittest.TestCase):
         view._gimbal_yaw, view._gimbal_pitch = Mock(), Mock()
         view.update_gimbal(GimbalPose(0, 0, -12))
         view._gimbal_pitch.rotate.assert_called_once_with(0, math.radians(-12), 0)
+
 
 
 if __name__ == "__main__":

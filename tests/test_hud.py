@@ -22,6 +22,7 @@ class HUDTests(unittest.TestCase):
     def test_rangefinder_readout_includes_ten_meters_and_blanks_other_returns(self):
         self.assertEqual(range_readout(4.125), '4.12 m')
         self.assertEqual(range_readout(10), '10.00 m')
+        self.assertEqual(range_readout(15, max_distance=None), '15.00 m')
         for invalid in (None, True, '5', -1, 10.001, float('nan'), float('inf')):
             with self.subTest(value=invalid):
                 self.assertEqual(range_readout(invalid), '---- m')

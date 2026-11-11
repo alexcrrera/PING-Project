@@ -29,6 +29,7 @@ void FlightManager::begin()
     state_machine.setState(STATE_MACHINE_STATES::AWAIT); // set the initial state to AWAIT, which is the state where the lander is waiting for a command to take off
     flight_guard.begin(this);
     motor_manager.begin(this);
+    gimbal.begin(this);
 
    
 }
@@ -54,6 +55,7 @@ void FlightManager::update()
 
 
     motor_manager.update();
+    gimbal.update();
  
     
     telemetry_manager.update(now);

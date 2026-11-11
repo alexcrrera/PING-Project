@@ -244,6 +244,19 @@ class DecoderTests(unittest.TestCase):
 
 
 class SerialSourceTests(unittest.TestCase):
+    def test_gimbal_command_uses_existing_serial_connection(self):
+        port = FakePort(b"")
+        written = []
+        port.write = lambda data: written.append(data) or len(data)
+        source = SerialTelemetrySource("COM5", serial_factory=lambda **kwargs: port)
+        self.assertFalse(source.send_gimbal_command("GIMBAL_MODE:1"))
+        source.poll(0)
+        self.assertTrue(source.send_gimbal_command("GIMBAL_AIM:-20.00,15.00"))
+        self.assertEqual(written, [b"GIMBAL_AIM:-20.00,15.00\n"])
+        port.write = lambda data: 1
+        self.assertFalse(source.send_gimbal_command("GIMBAL_HOME:"))
+        self.assertFalse(source.transport_connected)
+
     def test_serial_monitor_keeps_latest_valid_groups_and_bounded_raw_lines(self):
         port = FakePort(b"$RVR,P1,1,2,")
         source = SerialTelemetrySource("COM5", serial_factory=lambda **kwargs: port)
@@ -306,10 +319,17 @@ class SerialSourceTests(unittest.TestCase):
         self.assertEqual(sample.acceleration_mps2, (1, 2, 3))
         self.assertEqual((sample.latitude_deg, sample.longitude_deg, sample.altitude_m), (48.84, 2.35, 45))
         self.assertEqual((sample.gimbal_distance_1_m, sample.gimbal_distance_2_m), (2.5, None))
+        self.assertEqual(sample.gimbal_lidar_distance_m, 5)
         self.assertEqual((sample.gimbal_pan_deg, sample.gimbal_pitch_deg), (-20, 10))
 
         port.data = b"$RVR,GPD,0,0,0,0*\n"
         self.assertIsNone(manager.update(.1).sample.latitude_deg)
+
+        port.data = b"$RVR,GMBL,0,0,0,2,0,0,0*\n"
+        sample = manager.update(.2).sample
+        self.assertIsNone(sample.gimbal_lidar_distance_m)
+        self.assertIsNone(sample.gimbal_distance_1_m)
+        self.assertIsNone(sample.gimbal_distance_2_m)
 
     def test_rover_groups_decode_and_merge_through_the_serial_source(self):
         port = FakePort(b"$RVR,P1,0.75,-90,")

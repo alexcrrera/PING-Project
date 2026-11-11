@@ -62,6 +62,25 @@ void StateEstimator::updateStructs(LanderState& state, const SensorMeasurements&
     wsst.estimated_slip_ratio_FR = wheels.front_right.estimated_slip_ratio;
     wsst.estimated_slip_ratio_RL = wheels.rear_left.estimated_slip_ratio;
     wsst.estimated_slip_ratio_RR = wheels.rear_right.estimated_slip_ratio;
+
+
+    // Use the LiDAR line-of-sight distance for both estimates for now.
+    const auto& lidar = sensorMeasurements.lidar_data;
+    const float distance = lidar.valid ? lidar.raw_distance_M : 0.0f;
+    state.group_GMBL_data.lidar_distance_M = distance;
+    state.group_GMBL_data.estimated_horizontal_distance_1_M = distance;
+    state.group_GMBL_data.estimated_horizontal_distance_2_M = distance;
+    state.group_GMBL_data.estimation_validity = lidar.valid ? 3 : 0;
+
+    // Gimbal angles are commanded body-relative values.
+    if (flight_manager != nullptr)
+    {
+        const auto& gimbal = flight_manager->getGimbal();
+        state.group_GMBL_data.gimbal_mode = static_cast<uint8_t>(gimbal.getMode());
+        state.group_GMBL_data.pan_angle_DEG = gimbal.getPan_deg();
+        state.group_GMBL_data.tilt_angle_DEG = gimbal.getTilt_deg();
+    }
+
 }
 
 

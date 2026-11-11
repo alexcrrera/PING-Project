@@ -41,11 +41,11 @@ ICONS = {
 }
 CAMERA_ZOOM_LEVELS = (1, 2, 5, 12, 20)
 STABILIZATION_LABELS = {
-    StabilizationMode.OFF: ("OFF", "Follows rover tilt and turns"),
-    StabilizationMode.LOCK: ("LOCK", "Heading + pitch locked · Roll level"),
-    StabilizationMode.FOLLOW: ("FOLLOW", "Pitch locked · Roll level · Turns with rover"),
+    StabilizationMode.OFF: ("FOLLOW BOTH", "Follows rover yaw and pitch"),
+    StabilizationMode.LOCK: ("HEADLESS", "World yaw and pitch locked"),
+    StabilizationMode.FOLLOW: ("FOLLOW YAW", "Follows rover yaw · Pitch locked"),
 }
-STABILIZATION_HINT = "Z: Off → Lock → Follow"
+STABILIZATION_HINT = "Z: Follow Both / Headless / Follow Yaw"
 
 GROUP_TITLES = {
     "ATVL": "Motion", "WSST": "Wheel speed and slip", "ACCL": "Acceleration",
@@ -141,6 +141,7 @@ class Dashboard:
         self._last_camera = -1
         self._last_history_count = -1
         self.reticle_visible = True
+        self.cameraRotation = 0
         self._resetting_filters = False
         self._last_horizon: tuple[float, float] | None = None
         self._last_orientation: tuple | None = None
@@ -235,6 +236,7 @@ class Dashboard:
                 ui.html('<span class="section-index">01</span> FRONT CAMERA', sanitize=False).classes("panel-title")
                 with ui.element("div").classes("head-actions"):
                     self._label("camera_resolution", "960 × 540", "small-meta")
+                    self.rotation_button = ui.button("0°", icon="rotate_right", on_click=self.rotate_camera).props('flat dense no-caps aria-label="Rotate camera image clockwise"').tooltip("Rotate camera image 90°")
                     self.reticle_button = ui.button(icon="my_location", on_click=self.toggle_reticle).props('flat dense aria-label="Toggle crosshair"').tooltip("Crosshair")
                     ui.button(icon="fullscreen").props('flat dense aria-label="Expand camera"').on("click", js_handler="() => { const el = document.getElementById('camera-stage'); if(document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen(); }").tooltip("Fullscreen")
             with ui.element("div").classes("camera-stage").props('id="camera-stage"'):
@@ -252,7 +254,7 @@ class Dashboard:
                 self.horizon.set_visibility(False)
                 self.crosshair = ui.html(TACTICAL_RETICLE, sanitize=False).classes("crosshair")
                 with ui.element("div").classes("rangefinder-overlay").props('role="status" aria-label="Camera center rangefinder"'):
-                    self._label("rangefinder_mode", "LRF / SIM · 10 M", "rangefinder-label")
+                    ui.label("RANGE:").classes("rangefinder-label")
                     self._label("overlay_range", "---- m", "rangefinder-value")
                 with ui.element("div").classes("gimbal-tools") as self.gimbal_controls:
                     with ui.element("div").classes("gimbal-buttons"):
@@ -283,6 +285,12 @@ class Dashboard:
                 self._label("camera_status", "VIRTUAL TERRAIN / TEST SOURCE")
                 self._label("gimbal_hint", "RIGHT STICK / IJKL AIM · R / × HOME")
 
+    def rotate_camera(self) -> None:
+        self.cameraRotation = (self.cameraRotation + 90) % 360
+        self.rotation_button.set_text(f"{self.cameraRotation}°")
+        self._last_camera = -1
+        self.refresh()
+
     def _tools_sidebar(self) -> None:
         with ui.element("aside").classes("panel tools-sidebar").props('id="camera-tools" aria-label="Camera tools"'):
             with ui.element("div").classes("panel-head"):
@@ -293,7 +301,7 @@ class Dashboard:
                     ui.label("STABILIZATION").classes("eyebrow")
                     self.stabilization_button = ui.button("OFF · Z", on_click=self.toggle_stabilization).props('outline dense no-caps aria-label="Cycle camera stabilization mode"').classes("stabilization-toggle")
                     self._label("stabilization_detail", "Follows rover tilt and turns", "subtext")
-                    ui.label(STABILIZATION_HINT).classes("subtext")
+                    self._label("stabilization_hint", STABILIZATION_HINT, "subtext")
                 with ui.element("div").classes("tool-section"):
                     self._camera_filter_controls()
             with ui.element("div").classes("navigation-panel"):
@@ -559,7 +567,7 @@ class Dashboard:
             ui.html("<h2>Camera source</h2>", sanitize=False)
             self.camera_select = ui.select({"simulation": "Virtual terrain", "network": "Pi / network camera", "usb": "USB camera"},
                                            value="simulation", label="Camera").props("outlined dense")
-            self.camera_address = ui.input("Stream address", value="tcp://192.168.68.56:8888").props("outlined dense").classes("w-full")
+            self.camera_address = ui.input("Stream address", value="tcp://192.168.137.22:8888").props("outlined dense").classes("w-full")
             self.camera_address.bind_visibility_from(self.camera_select, "value", backward=lambda value: value == "network")
             self.camera_index = ui.number("USB camera index", value=0, min=0, precision=0).props("outlined dense")
             self.camera_index.bind_visibility_from(self.camera_select, "value", backward=lambda value: value == "usb")
@@ -568,7 +576,7 @@ class Dashboard:
             ui.separator()
             ui.html("<h2>Telemetry source</h2>", sanitize=False)
             ui.label("Radio bench runs the virtual terrain and sends TEST, DRIVE, STATE and WHEELS lines through one USB radio. Open the other radio in your serial app.").classes("dialog-note")
-            self.source_select = ui.select({"simulation": "Virtual robot", "serial": "USB / serial receive only", "radio_bench": "Radio bench · send and receive"}, value="simulation", label="Source").props("outlined dense")
+            self.source_select = ui.select({"simulation": "Virtual robot", "serial": "USB / serial telemetry and gimbal", "radio_bench": "Radio bench · send and receive"}, value="simulation", label="Source").props("outlined dense")
             self.port_input = ui.input("Serial port", placeholder="COM3 or /dev/ttyUSB0").props("outlined dense")
             self.baud_input = ui.number("Baud rate", value=57600, min=1, precision=0).props("outlined dense")
             self.port_hint = ui.label("").classes("dialog-note")
@@ -607,7 +615,7 @@ class Dashboard:
         if kind == "network":
             address = (self.camera_address.value or "").strip()
             if not address.startswith(("tcp://", "rtsp://", "http://", "https://", "udp://")):
-                ui.notify("Enter a stream address such as tcp://192.168.68.56:8888")
+                ui.notify("Enter a stream address such as tcp://192.168.137.22:8888")
                 return
             camera = OpenCVCameraSource(address, fps=20)
         elif kind == "usb":
@@ -693,7 +701,6 @@ class Dashboard:
             pose = self.station.gimbal.state
         elif (isinstance(sample, RoverTelemetrySample) and sample.gimbal_pan_deg is not None
               and sample.gimbal_pitch_deg is not None):
-            # The mount is parented to the chassis and takes body-relative angles.
             pose = GimbalPose(yaw_deg=sample.gimbal_pan_deg, pitch_deg=sample.gimbal_pitch_deg)
         else:
             pose = GimbalPose()
@@ -816,7 +823,11 @@ class Dashboard:
             if (sequence - self._map_toggle_sequence) % 2:
                 self._set_map_expanded(not self.map_expanded)
             self._map_toggle_sequence = sequence
-        self.input_guard.props(f'data-mode="{self.station.drive.mode}" data-enabled="{str(self.station.drive_input_enabled).lower()}" data-gimbal="{str(self.gimbal_available).lower()}" data-map-open="{str(self.map_expanded).lower()}"')
+        remoteGimbal = type(source) is SerialTelemetrySource
+        requestedMode = self.station.rover_gimbal_mode
+        roverMode = getattr(sample, "gimbal_mode", None) if remoteGimbal and source.transport_connected else None
+        stabilizationAvailable = roverMode is not None if remoteGimbal else self.gimbal_available
+        self.input_guard.props(f'data-mode="{self.station.drive.mode}" data-enabled="{str(self.station.drive_input_enabled).lower()}" data-gimbal="{str(self.gimbal_available).lower()}" data-stabilization="{str(stabilizationAvailable).lower()}" data-map-open="{str(self.map_expanded).lower()}"')
         self.gimbal_controls.set_visibility(self.gimbal_available)
         self.gimbal_view.set_visibility(self.gimbal_available)
         self._text("gimbal_hint", "RIGHT STICK / IJKL AIM · R / × HOME" if self.gimbal_available else "FORWARD VIEW")
@@ -825,24 +836,36 @@ class Dashboard:
         label, detail = STABILIZATION_LABELS[mode]
         enabled = mode is not StabilizationMode.OFF
         limited = enabled and self.station.gimbal.limited
+        if remoteGimbal:
+            label, detail = {
+                0: ("HEADLESS", "World yaw and pitch locked"),
+                1: ("FOLLOW YAW", "Follows rover yaw · Pitch locked"),
+                2: ("FOLLOW BOTH", "Follows rover yaw and pitch"),
+                None: ("WAITING", "Waiting for gimbal mode telemetry"),
+            }[roverMode]
+            if self.station._requested_gimbal_mode is not None and requestedMode is not None:
+                detail += " · Command sent, awaiting telemetry"
+            enabled = roverMode in (0, 1)
+            limited = False
+        hint = "Z: Headless / Follow Yaw / Follow Both" if remoteGimbal else STABILIZATION_HINT
+        self._text("stabilization_hint", hint)
         self.stabilization_marker.set_text(f"STAB {label}" + (" · LIMIT" if limited else " · Z"))
         self.stabilization_button.set_text(f"{label} · Z")
         for control in (self.stabilization_marker, self.stabilization_button):
-            control.set_enabled(self.gimbal_available)
-            control.props(f'aria-label="Camera stabilization: {label.title()}. Cycle mode (Z)" title="{detail}. {STABILIZATION_HINT}"')
+            control.set_enabled(stabilizationAvailable)
+            control.props(f'aria-label="Camera stabilization: {label.title()}. Cycle mode (Z)" title="{detail}. {hint}"')
             control.classes(add="stabilization-on" if enabled else "stabilization-off", remove="stabilization-off" if enabled else "stabilization-on")
-        self._text("stabilization_detail", "Available with virtual camera" if not self.gimbal_available else
+        self._text("stabilization_detail", detail if remoteGimbal else "Available with virtual camera" if not self.gimbal_available else
                    detail + (" · Compensation limit reached" if limited else ""))
         self._text("gimbal_angles", f"PAN {gimbal.yaw_deg:+.0f}° / TILT {gimbal.pitch_deg:+.0f}°")
         if self.gimbal_available:
             self.gimbal_view.set_content(gimbal_indicator(gimbal))
-        self._update_rover_gimbal(sample, simulated=simulated)
         if self.drive_toggle.value != self.station.drive.mode:
             self.drive_toggle.set_value(self.station.drive.mode)
         self.drive_toggle.set_enabled(self.station.drive_input_enabled)
         self._text("session", f"LOCAL STATION  /  {datetime.now():%H:%M:%S}")
         self._text("mode", "RADIO BENCH + TERRAIN" if radio_bench else "VIRTUAL TELEMETRY" if simulated else "USB TELEMETRY")
-        self._text("rate", "RADIO / VIRTUAL 10 HZ" if radio_bench else "PAUSED / VIRTUAL" if paused else "VIRTUAL / 10 HZ" if simulated else "USB / RECEIVE ONLY")
+        self._text("rate", "RADIO / VIRTUAL 10 HZ" if radio_bench else "PAUSED / VIRTUAL" if paused else "VIRTUAL / 10 HZ" if simulated else "USB / TELEMETRY")
         self.pause_button.set_visibility(isinstance(source, SimulatedTelemetrySource))
         self.pause_button.set_text("Resume simulation" if paused else "Pause simulation")
         self.pause_button.props(f"icon={'play_arrow' if paused else 'pause'}")
@@ -900,6 +923,10 @@ class Dashboard:
             cameraYaw += gimbal.yaw_deg
             camera_pitch += gimbal.pitch_deg
             cameraRoll += gimbal.roll_deg
+        if not simulated:
+            yaw = getattr(sample, "heading_deg", None)
+            pan = getattr(sample, "gimbal_pan_deg", None)
+            cameraYaw = (yaw + pan) if yaw is not None and pan is not None else None
         camera_heading = cameraYaw % 360 if cameraYaw is not None else None
         heading = round(camera_heading, 1) % 360 if camera_heading is not None else None
         self._text("overlay_heading", f"{heading:05.1f}°" if heading is not None else "-")
@@ -907,9 +934,8 @@ class Dashboard:
         if heading != self._last_heading:
             self.compass.set_content(heading_tape(heading))
             self._last_heading = heading
-        # A USB rover and the virtual camera have independent poses. Only show
-        # their bearings together when both belong to the shared simulation.
-        orientation_camera = camera_heading if sample and simulated and self.gimbal_available else None
+        # Live camera bearing uses rover yaw and body-relative gimbal pan.
+        orientation_camera = camera_heading if sample and (not simulated or self.gimbal_available) else None
         angles = (getattr(vehicle_attitude, axis + "_deg", None) for axis in ("pitch", "roll", "heading"))
         orientation = tuple(round(value, 1) if value is not None else None for value in angles) + (
                                 round(orientation_camera, 1) if orientation_camera is not None else None,)
@@ -941,6 +967,7 @@ class Dashboard:
         poseAvailable = speed is not None and all(value is not None for value in orientation[:3])
         if poseAvailable:
             self.rover.update(motion if simulated else sample)
+        self._update_rover_gimbal(sample, simulated=simulated)
         if simulated:
             self.rover.update_motion(motion)
         self._text("pose_position", f"X {motion.x_m:+.1f} m / Y {motion.y_m:+.1f} m" if simulated else "4WD / TEST MODEL")
@@ -950,17 +977,23 @@ class Dashboard:
             self._last_history_count = state.received_count
         self._text("history_label", "SPEED HISTORY" if sample else "HISTORY / NO FRESH DATA")
         camera = self.station.camera
+        networkCamera = isinstance(getattr(camera, "device", None), str) and not camera.simulated
+        self.rotation_button.set_visibility(networkCamera)
         frame = camera.latest_frame()
         camera_fresh = frame is not None and not camera.error and now - frame.captured_at < 2.0
-        self._text("overlay_range", range_readout(getattr(frame, "range_m", None) if camera_fresh else None))
-        self._text("rangefinder_mode", "LRF / SIM · 10 M" if camera.simulated else "LRF · 10 M")
+        if simulated:
+            distance = getattr(frame, "range_m", None) if camera_fresh else None
+            self._text("overlay_range", range_readout(distance))
+        else:
+            distance = getattr(sample, "gimbal_lidar_distance_m", None)
+            self._text("overlay_range", range_readout(distance, max_distance=None))
         self.camera_empty.set_visibility(not camera_fresh)
         if not camera_fresh:
             self.camera_empty.set_text(camera.error or "Waiting for camera frames…")
         if frame and frame.sequence != self._last_camera:
             query = urlencode({"sequence": frame.sequence,
                                "sensitivity": int(self.edge_sensitivity.value), "opacity": int(self.edge_opacity.value),
-                               "vision_strength": int(self.vision_strength.value),
+                               "vision_strength": int(self.vision_strength.value), "rotation": self.cameraRotation if networkCamera else 0,
                                **{name: str(control.value).lower() for name, control in self.filter_switches.items()}})
             self.camera_image.props(f'src="/api/camera/frame?{query}"')
             self._last_camera = frame.sequence
@@ -986,7 +1019,7 @@ class Dashboard:
         self.brake_button.set_text("BRAKE ON" if latched else "BRAKE OFF")
         self.brake_button.props(f'aria-pressed="{str(latched).lower()}"')
         self._text("drive_command", "BRAKE" if command.brake and self.station.drive_input_enabled else f"Throttle {command.throttle:+.2f} / Turn {command.steering:+.2f}")
-        self._text("drive_hint", ("W/S or ↑/↓ sends DRIVE · A/D steer · Space brake" if self.station.drive.mode == "keyboard" else "R2 sends DRIVE · Left stick steers · L2 brakes") if radio_bench else "USB telemetry / virtual drive unavailable" if not simulated else "Simulation paused" if paused else "W/S or ↑/↓ drive · A/D steer · Space hold / B toggle brake" if self.station.drive.mode == "keyboard" else "R2 accelerate · Left stick steer · L2 hold / Start toggle brake")
+        self._text("drive_hint", ("W/S or ↑/↓ sends DRIVE · A/D steer · Space brake" if self.station.drive.mode == "keyboard" else "R2 sends DRIVE · Left stick steers · L2 brakes") if radio_bench else "USB telemetry / drive commands enabled" if not simulated else "Simulation paused" if paused else "W/S or ↑/↓ drive · A/D steer · Space hold / B toggle brake" if self.station.drive.mode == "keyboard" else "R2 accelerate · Left stick steer · L2 hold / Start toggle brake")
         self.values["controller"].props(f'title="{escape(controller.status)}"')
         age = "" if state.age_seconds is None else f" / age {state.age_seconds:.1f}s"
         link_status = "radio open" if radio_open else "radio offline" if radio_bench else state.status.value
@@ -1006,14 +1039,15 @@ def configure_dashboard(station: BaseStation, *, font_dir: str | None = None) ->
                      denoise: bool = False, sharpen: bool = False, contrast: bool = False, edges: bool = False,
                      invert: bool = False, night_vision: bool = False, amber: bool = False,
                      white_phosphor: bool = False, thermal: bool = False, scanlines: bool = False,
-                     vision_strength: int = Query(75, ge=0, le=100)):
+                     vision_strength: int = Query(75, ge=0, le=100),
+                     rotation: int = Query(0, ge=0, le=270, multiple_of=90)):
         frame = station.camera.latest_frame()
         if frame is None or station.camera.error or time.monotonic() - frame.captured_at >= 2.0:
             return Response(status_code=503, headers={"Cache-Control": "no-store"})
         settings = CameraFilterSettings(view=view, sensitivity=sensitivity, opacity=opacity, denoise=denoise,
                                         sharpen=sharpen, contrast=contrast, edges=edges, invert=invert,
                                         night_vision=night_vision, amber=amber, white_phosphor=white_phosphor,
-                                        thermal=thermal, scanlines=scanlines, vision_strength=vision_strength)
+                                        thermal=thermal, scanlines=scanlines, vision_strength=vision_strength, rotation=rotation)
         jpeg = processor.process(frame, settings)
         return Response(jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store", "X-Frame-Sequence": str(frame.sequence)})
 
@@ -1038,4 +1072,4 @@ def configure_dashboard(station: BaseStation, *, font_dir: str | None = None) ->
 
     app.on_startup(station.start)
     app.on_shutdown(station.close)
-    app.timer(1 / 30, station.tick)
+    app.timer(0.01, station.tick)

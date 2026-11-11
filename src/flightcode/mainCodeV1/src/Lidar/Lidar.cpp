@@ -35,6 +35,10 @@ void Lidar::update(LanderState& landerState)
             measurementStartTime = lastMeasurementTime;
             measurementState = MeasurementState::Measuring;
         }
+        else
+        {
+            measurement.valid = false;
+        }
 
         return;
     }
@@ -52,6 +56,8 @@ void Lidar::update(LanderState& landerState)
 
             if (readDistance())
                 processMeasurement(landerState);
+            else
+                measurement.valid = false;
 
             measurementState = MeasurementState::Idle;
             break;
@@ -95,6 +101,7 @@ bool Lidar::readDistance()
     uint16_t distance_cm = (wire->read() << 8) | wire->read();
 
     measurement.raw_distance_M = distance_cm * 0.01f; // Convert cm to meters
+    measurement.valid = distance_cm > 0;
 
     return true;
 }

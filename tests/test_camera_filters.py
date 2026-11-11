@@ -25,6 +25,15 @@ class CameraFilterTests(unittest.TestCase):
         self.assertIs(self.processor.process(self.frame, CameraFilterSettings()), self.frame.jpeg)
         self.assertIs(self.processor.process(self.frame, CameraFilterSettings(view="edges", opacity=0)), self.frame.jpeg)
 
+    def test_rotation_cycles_clockwise_without_modifying_source(self):
+        image = np.arange(18, dtype=np.uint8).reshape(2, 3, 3)
+        original = image.copy()
+        for angle, turns in ((0, 0), (90, 3), (180, 2), (270, 1)):
+            result = apply_filters(image, CameraFilterSettings(rotation=angle))
+            np.testing.assert_array_equal(result, np.rot90(original, turns))
+        np.testing.assert_array_equal(image, original)
+        self.assertIsNot(self.processor.process(self.frame, CameraFilterSettings(rotation=180)), self.frame.jpeg)
+
     def test_edges_overlay_only_changes_edges_and_preserves_input(self):
         original = self.image.copy()
         result = apply_filters(self.image, CameraFilterSettings(view="edges", opacity=100))

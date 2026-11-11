@@ -5,6 +5,7 @@
 #include "../Lander/Lander.h"
 
 #include "../MotorManager/MotorManager.h"
+#include "../Gimbal/Gimbal.h"
 
 
 
@@ -44,6 +45,7 @@ public:
 
     TelemetryManager& getTelemetryManager(){return telemetry_manager;}
     MotorManager& getMotorManager(){return motor_manager;}
+    Gimbal& getGimbal(){return gimbal;}
     StateMachine& getStateMachine(){return state_machine;}
     CommandHandler& getCommandHandler(){return command_handler;}
     FlightGuard& getFlightGuard(){return flight_guard;}
@@ -58,6 +60,7 @@ private:
   
 
     MotorManager motor_manager; // owns EDF and servo vanes
+    Gimbal gimbal;
     TelemetryManager telemetry_manager; // manages telemetry output
     StateMachine state_machine; // manages the state of the flight
     CommandHandler command_handler; // manages commands received from telemetry

@@ -27,3 +27,26 @@ void CommandHandler::consumeIncomingCommand(String incomingText) {
 
     
 }
+RoverDriveInput CommandHandler::getDriveInput() const
+{
+    RoverDriveInput result = driveInput;
+    if (!result.received || millis() - result.lastDriveTime > 500)
+    {
+        result.throttle = 0.0f;
+        result.steering = 0.0f;
+        result.leftX = 0.0f;
+        result.leftY = 0.0f;
+        result.leftTrigger = 0.0f;
+        result.rightTrigger = 0.0f;
+        result.cameraPan = 0.0f;
+        result.cameraTilt = 0.0f;
+        result.brake = true;
+    }
+    if (millis() - result.lastStickTime > 500)
+        result.cameraPan = result.cameraTilt = 0.0f;
+    if (millis() - result.lastLeftTime > 500)
+        result.leftX = result.leftY = 0.0f;
+    if (millis() - result.lastTriggerTime > 500)
+        result.leftTrigger = result.rightTrigger = 0.0f;
+    return result;
+}
