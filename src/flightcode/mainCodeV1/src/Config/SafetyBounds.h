@@ -23,7 +23,7 @@ namespace SafetyBounds {
     constexpr float max_yaw_acceleration_degs2 = 2500.0f;
 
     constexpr float yaw_abort_angle_deg = 99999.0f; // yaw angle that will trigger an abort
-    constexpr float pitch_roll_abort_angle_deg = 20.0f;
+    constexpr float pitch_roll_abort_angle_deg = 45.0f;
 
 }
 

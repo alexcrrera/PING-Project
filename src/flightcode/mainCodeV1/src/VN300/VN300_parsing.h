@@ -18,8 +18,28 @@ namespace VN300Parsing
     void parse_GNSS_Solution_LLA(char *payload, VN300Measurement& measurement);
     void parse_INS_Solution_LLA(char *payload, VN300Measurement& measurement);
     void parse_YPR_LinearAccel_Gyro(char *payload, VN300Measurement& measurement);
+    void parse_YBA_LinearAccel_Gyro(char *payload, VN300Measurement& measurement);
 }
+void VN300Parsing::parse_YBA_LinearAccel_Gyro(char *payload, VN300Measurement& measurement){
+    
+    char header[7];
 
+    commaParser.parseLine(payload,header,
+
+        measurement.ybaLinearAccelGyro.Yaw,
+        measurement.ybaLinearAccelGyro.Pitch,
+        measurement.ybaLinearAccelGyro.Roll,
+        measurement.ybaLinearAccelGyro.Roll,
+
+        measurement.ybaLinearAccelGyro.LinAccelX,
+        measurement.ybaLinearAccelGyro.LinAccelY,
+        measurement.ybaLinearAccelGyro.LinAccelZ,
+
+        measurement.ybaLinearAccelGyro.GyroX,
+        measurement.ybaLinearAccelGyro.GyroY,
+        measurement.ybaLinearAccelGyro.GyroZ
+    );
+}
 
 void VN300Parsing::parse_GNSS_Solution_LLA(char* payload, VN300Measurement& measurement)
 {

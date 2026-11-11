@@ -50,7 +50,7 @@ void FlightGuard::checkFlightConditions() {
     
     overrideFlags.horizontal_overspeed_ok =
 
-    FlightGuardUtilities::isHorizontalVelocityWithinBounds(state.velocity.East_SI,state.velocity.North_SI);
+    FlightGuardUtilities::isHorizontalVelocityWithinBounds(state.velocity.X_SI,state.velocity.Y_SI);
 
 
 

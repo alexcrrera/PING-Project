@@ -30,6 +30,16 @@ void TelemetryUtilities::addDebugGroup(String& payload, const NED_coordinates& N
     payload += "\n";
 }
 
+void TelemetryUtilities::addDebugGroup(String& payload, const BODY_coordinates& BODY_payload, const String& name)
+{
+    addDebugGroup(payload, name);
+
+    payload += "X: " + String(BODY_payload.X_SI);
+    payload += " | Y: " + String(BODY_payload.Y_SI);
+    payload += " | Z: " + String(BODY_payload.Z_SI);
+    payload += "\n";
+}
+
 
 void TelemetryUtilities::addDebugGroup(String& payload, const Rotation_Euler_coordinates& Euler_payload, const String& name)
 {
@@ -112,6 +122,13 @@ void TelemetryUtilities::addTelemetryGroup(String& payload, const NED_coordinate
     addTelemetryField(payload, NED_payload.North_SI, 2);
     addTelemetryField(payload, NED_payload.East_SI, 2);
     addTelemetryField(payload, NED_payload.Down_SI, 2);
+}
+
+void TelemetryUtilities::addTelemetryGroup(String& payload, const BODY_coordinates& BODY_payload)
+{
+    addTelemetryField(payload, BODY_payload.X_SI, 2);
+    addTelemetryField(payload, BODY_payload.Y_SI, 2);
+    addTelemetryField(payload, BODY_payload.Z_SI, 2);
 }
 
 

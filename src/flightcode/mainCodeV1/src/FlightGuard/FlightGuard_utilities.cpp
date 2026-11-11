@@ -30,8 +30,7 @@ void FlightGuardUtilities::resetOverrideFlags(FlightGuardOverrideFlags& flags){
 
     flags.horizontal_overspeed_ok = true;
     flags.altitude_limit_ok = true;
-    flags.NED_horizontal_boundary_ok= true;
-    flags.NED_vertical_boundary_ok = true;
+
     flags.roll_pitch_ok = true;
     flags.yaw_ok = true;
 }

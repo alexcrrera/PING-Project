@@ -52,13 +52,12 @@ class StateEstimator
        
         void estimateVelocity_EULER(LanderState& state, const SensorMeasurements& sensorMeasurements    );
 
-
-        void estimateAcceleration_NED(LanderState& state, const SensorMeasurements& sensorMeasurements);
-        void estimateVelocity_NED(LanderState& state, const SensorMeasurements& sensorMeasurements);
+        void estimateAcceleration_BODY(LanderState& state, const SensorMeasurements& sensorMeasurements);
+        void estimateVelocity_BODY(LanderState& state, const SensorMeasurements& sensorMeasurements);
         void estimatePosition_NED(LanderState& state, const SensorMeasurements& sensorMeasurements);
 
         bool home_position_set = false;
-        NED_coordinates home_position_NED;
+        
     };
 
 #endif // STATE_ESTIMATOR_H

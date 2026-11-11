@@ -55,6 +55,19 @@ struct YPR_LinearAccel_Gyro {
 };
 
 
+struct YBA_LinearAccel_Gyro {
+    float Yaw = 0.0f;
+    float Pitch = 0.0f;
+    float Roll = 0.0f;
+    float LinAccelX = 0.0f;
+    float LinAccelY = 0.0f;
+    float LinAccelZ = 0.0f;
+    float GyroX = 0.0f;
+    float GyroY = 0.0f;
+    float GyroZ = 0.0f;
+};
+
+
 
 
 
@@ -84,6 +97,7 @@ struct VN300Measurement
     INS_Solution_LLA insSolution;
     YPR_LinearAccel_Gyro yprLinearAccelGyro;
     GNSS_Solution_LLA gnssSolution;
+    YBA_LinearAccel_Gyro ybaLinearAccelGyro;
 };
 
 

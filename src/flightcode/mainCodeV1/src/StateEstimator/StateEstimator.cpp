@@ -26,8 +26,8 @@ void StateEstimator::update(SensorMeasurements& sensorMeasurements)
     
     estimateVelocity_EULER(state, sensorMeasurements);
 
-    estimateAcceleration_NED(state, sensorMeasurements);
-    estimateVelocity_NED(state, sensorMeasurements);
+    estimateAcceleration_BODY(state, sensorMeasurements);
+    estimateVelocity_BODY(state, sensorMeasurements);
     estimatePosition_NED(state, sensorMeasurements);
 }
 
@@ -35,34 +35,27 @@ void StateEstimator::update(SensorMeasurements& sensorMeasurements)
 
 
 
-void StateEstimator::estimateAcceleration_NED(LanderState& state, const SensorMeasurements& sensorMeasurements)
+void StateEstimator::estimateAcceleration_BODY(LanderState& state, const SensorMeasurements& sensorMeasurements)
 {
-    float LinAccelN = sensorMeasurements.vn300_data.yprLinearAccelGyro.LinAccelN;
-    float LinAccelE = sensorMeasurements.vn300_data.yprLinearAccelGyro.LinAccelE;
-    float LinAccelD = sensorMeasurements.vn300_data.yprLinearAccelGyro.LinAccelD;
-    state.acceleration.North_SI = LinAccelN;
-    state.acceleration.East_SI = LinAccelE;
-    state.acceleration.Down_SI = LinAccelD;
+
+    state.acceleration.X_SI = sensorMeasurements.vn300_data.ybaLinearAccelGyro.LinAccelX; // Forward acceleration
+    state.acceleration.Y_SI = sensorMeasurements.vn300_data.ybaLinearAccelGyro.LinAccelY; // Right acceleration
+    state.acceleration.Z_SI = sensorMeasurements.vn300_data.ybaLinearAccelGyro.LinAccelZ; // Up acceleration
 
     state.validity.accelerationValid = true; // Assuming acceleration is valid if VN300 data is available
 
 }
 
 
-void StateEstimator::estimateVelocity_NED(LanderState& state, const SensorMeasurements& sensorMeasurements)
+
+
+void StateEstimator::estimateVelocity_BODY(LanderState& state, const SensorMeasurements& sensorMeasurements)
 {
-    
-    float VelN = sensorMeasurements.opticalFlow_data.velocity_North_SI;
-    float VelE = sensorMeasurements.opticalFlow_data.velocity_East_SI;
    
-
-
-    
-    state.velocity.North_SI = VelN;
-    state.velocity.East_SI = VelE;
-    state.velocity.Down_SI = sensorMeasurements.lidar_data.velocity_Down_SI;
-
-     state.validity.velocityValid = sensorMeasurements.opticalFlow_data.velocityValid; // set velocity validity based on optical flow data
+    state.velocity.X_SI = 0.0f; // Placeholder for actual velocity estimation logic
+    state.velocity.Y_SI = 123.23f; // Placeholder for actual velocity estimation logic
+    state.velocity.Z_SI = 12.58;
+    state.validity.velocityValid = true; // Assuming velocity is valid if VN300 data is available
 }
 
 

@@ -36,7 +36,7 @@ vane servos, not four bidirectional wheel drives.
 2. `StateEstimator::estimatePosition_NED()` assigns zero to both horizontal
    coordinates each update. This estimator cannot be reused as rover odometry.
 3. The optical-flow parser has packet checks, but flow validity does not expire
-   when packets stop. Its `projectOpticalFlowToNED()` uses pitch and roll without
+   when packets stop. 
    yaw, so the claimed North/East result is not a complete world-frame rotation.
    Calibrate mounting direction, distance scaling, and body-frame velocity.
 4. Incoming commands are handled by `TelemetryManager` after the motor update.

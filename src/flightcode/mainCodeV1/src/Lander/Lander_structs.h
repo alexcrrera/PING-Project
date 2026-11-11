@@ -78,11 +78,14 @@ struct LanderState
 
     float altitude_M = 0.0f; // Altitude above ground level [m]
 
-    // NED velocity [m/s]
-    NED_coordinates velocity;
+    // BODY velocity [m/s]
+    BODY_coordinates velocity;
 
-    // NED linear acceleration [m/s^2]
-    NED_coordinates acceleration;
+
+
+
+    // BODY linear acceleration [m/s^2]
+    BODY_coordinates acceleration;
 
     // Attitude in Euler angles [deg]
     Rotation_Euler_coordinates attitude;

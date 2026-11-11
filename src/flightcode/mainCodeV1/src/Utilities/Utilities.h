@@ -30,11 +30,16 @@ struct NED_coordinates {
     float Down_SI = 0.0f;
 };
 
-
-struct WaypointTarget {
-    NED_coordinates positionNED;
-    float yaw_deg;
+struct BODY_coordinates {
+    // Position -> units are meters
+    // velocity -> units are m/s ...
+    float X_SI = 0.0f;
+    float Y_SI = 0.0f;
+    float Z_SI = 0.0f;
 };
+
+
+
 
 
 
@@ -82,13 +87,9 @@ namespace Utilities{
     float EWA(float alpha, float u, float measurement);
 
     float degToRad(float deg);
-    bool isWithinEps_1D(float eps, float u, float u_ref);
-    bool isWithinEps_2D(float eps, float x, float y, float x_ref, float u_ref_2);
-    bool isWithinEps_3D(float epsH, float epsV, float x, float y, float z, float x_ref, float y_ref, float z_ref);
-    bool isWithinEps_3D(float epsH, float epsV,const Vector3& p, const Vector3& p_ref);
-    bool isWithinEps_NED(float epsH, float epsV, const Vector3& p, const Vector3& p_ref);
-    bool isWithinEps_Yaw(float epsYaw, float yaw, float yaw_ref);
-    bool isWithinEps_NED(float epsH, float epsV, const NED_coordinates& p, const NED_coordinates& p_ref);
+ 
+   
+   
     //bool isBounded(float u, float u_min, float u_max);
     constexpr bool isBounded(float value,float minValue,float maxValue){return value >= minValue &&value <= maxValue;}
     bool isSimpleBouded(float u, float u_max);
@@ -97,8 +98,6 @@ namespace Utilities{
     float distance2D(float x, float y, float x_ref, float y_ref);
     float distance3D(float x, float y, float z, float x_ref, float y_ref, float z_ref);
     float distance3D(const Vector3& p, const Vector3& p_ref);
-    float verticalDistanceNED(const Vector3& p, const Vector3& t);
-    float horizontalDistanceNED(const Vector3& p, const Vector3& t);
 
 
 

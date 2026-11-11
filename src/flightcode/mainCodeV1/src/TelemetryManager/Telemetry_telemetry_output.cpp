@@ -74,13 +74,7 @@ String TelemetryManager::get_telemetry_payload()
 
 
 
-    // desired position of  - 31-33
-    auto desired_position_z =420.0; // float 
-    auto desired_position_y = 69.0; // float
-    auto desired_position_x = 14.0; // float
-    NED_coordinates desired_position{desired_position_x, desired_position_y, desired_position_z};
-    //TelemetryUtilities::addTelemetryGroup(payload, desired_position);
-
+   
 
 
 

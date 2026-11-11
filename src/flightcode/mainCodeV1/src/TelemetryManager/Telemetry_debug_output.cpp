@@ -29,9 +29,9 @@ String TelemetryManager::get_debug_payload()
     TelemetryUtilities::addDebugGroup(payload, angularVelocityDeg, "ANGULAR VELOCITY");
     // flight regime data
     // getFlightRegimeDataAsString
-   // auto current_regime = flightManager->getStateMachine().getCurrentFlightRegimeData();
-   // TelemetryUtilities::addDebugGroup(payload, "FLIGHT REGIME");
-    //payload += TelemetryUtilities::getFlightRegimeDataAsString(current_regime);
+   auto current_regime = flightManager->getStateMachine().getCurrentFlightRegimeData();
+   TelemetryUtilities::addDebugGroup(payload, "CURRENT REGIME");
+    payload += TelemetryUtilities::getFlightRegimeDataAsString(current_regime);
     
 
   

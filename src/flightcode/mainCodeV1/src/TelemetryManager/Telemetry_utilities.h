@@ -16,6 +16,7 @@ namespace TelemetryUtilities
 
     void addDebugGroup(String& payload, const String& name);
     void addDebugGroup(String& payload, const NED_coordinates& NED_payload, const String& name);
+    void addDebugGroup(String& payload, const BODY_coordinates& BODY_payload, const String& name);
     void addDebugGroup(String& payload, const Rotation_Euler_coordinates& Euler_payload, const String& name);
 
     void addDebugField(String& payload, const String& name, const String& value);
@@ -39,6 +40,7 @@ namespace TelemetryUtilities
     }
 
     void addTelemetryGroup(String& payload, const NED_coordinates& NED_payload);
+    void addTelemetryGroup(String& payload, const BODY_coordinates& BODY_payload);
     void addTelemetryGroup(String& payload, const Rotation_Euler_coordinates& Euler_payload);
 
 
