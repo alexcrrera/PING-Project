@@ -57,12 +57,12 @@ void TelemetryManager::begin()
 void TelemetryManager::send_group(const String& group_name)
 {
     
-    String payload = TelemetryUtilities::getGroupPayload(group_name);
+    String payload = getGroupPayload(group_name);
 
 
     if(CommsConfig::USB.outputType == SerialOutputType::GROUP_FORMAT){
 
-        if (USB_output_enabled && USB_output_initialized && TelemetryUtilities::isGroupEnabled(group_name))
+        if (USB_output_enabled && USB_output_initialized && isGroupEnabled(group_name))
             {
                 send_USB_String(payload,true);
             }
@@ -70,7 +70,7 @@ void TelemetryManager::send_group(const String& group_name)
 
     if(CommsConfig::RADIO.outputType == SerialOutputType::GROUP_FORMAT){
 
-        if (RADIO_output_enabled && RADIO_output_initialized && TelemetryUtilities::isGroupEnabled(group_name))
+        if (RADIO_output_enabled && RADIO_output_initialized && isGroupEnabled(group_name))
             {
                 send_RADIO_String(payload,true);
             }
@@ -148,8 +148,6 @@ void TelemetryManager::update(uint32_t now)
     }
 }
 
-
-
 // ============================================================
 // UPDATE
 // ============================================================
@@ -165,7 +163,6 @@ void TelemetryManager::handleInput()
         handle_RADIO_input();
     }
 }
-
 
 void TelemetryManager::handle_USB_input()
 {
@@ -198,7 +195,6 @@ void TelemetryManager::handle_USB_input()
     }
 }
 
-
 void TelemetryManager::handle_RADIO_input()
 {
     while (RADIO_port->available() > 0)
@@ -230,7 +226,6 @@ void TelemetryManager::handle_RADIO_input()
     }
 }
 
-
 void TelemetryManager::send_RADIO_String(const String& content,bool jumpToNextLine)
 {
     
@@ -238,20 +233,13 @@ void TelemetryManager::send_RADIO_String(const String& content,bool jumpToNextLi
         return;
     }
 
-
     RADIO_port->print(content);
-
 
     if (jumpToNextLine)
     {
         RADIO_port->print("\n");
     }
 }
-
-
-// ============================================================
-// USB OUTPUT
-// ============================================================
 
 void TelemetryManager::send_USB_String(const String& content,bool jumpToNextLine)
 {
@@ -279,7 +267,6 @@ void TelemetryManager::toggle_RADIO(bool enable)
 
     RADIO_output_enabled = enable;
 }
-
 
 void TelemetryManager::toggle_USB_periodic()
 {
@@ -316,7 +303,6 @@ void TelemetryManager::toggle_USB(bool enable)
     USB_output_enabled = enable;
 }
 
-
 void TelemetryManager::toggle_USB()
 {
     if (!USB_output_initialized)
@@ -328,4 +314,126 @@ void TelemetryManager::toggle_USB()
     USB_output_enabled = !USB_output_enabled;
 }
 
+String TelemetryManager::getGroupPayload(const String& group_name)
+{
+    String payload = "";
+    payload += CommsConfig::outputHeaderTelemetryFormat;
+    payload += "," + group_name + ",";
+
+   payload += getGroupContent(group_name);
+    payload += CommsConfig::outputLineEndingTelemetryFormat;
+    return payload;
+}
+
+String TelemetryManager::getGroupContent(const String& group_name)
+{
+    if(group_name == "P1")
+    {
+        return getGroup1_asString();
+    }
+    else if(group_name == "P2")
+    {
+        return getGroup2_asString();
+    }
+    else if(group_name == "P3")
+    {
+        return getGroup3_asString();
+    }
+    else if(group_name == "F")
+    {
+        return getGroupFlags_asString();
+    }
+    else if(group_name == "LP")
+    {
+        return getGroupLowPriority_asString();
+    }
+
+    return "ERR_UNKNOWN_GROUP";
+ 
+}
+
+bool TelemetryManager::isGroupEnabled(const String& group_name)
+{
+    if (group_name == "P1")
+    {
+        return CommsConfig::PRIORITY_1.enabled;
+    }
+    else if (group_name == "P2")
+    {
+        return CommsConfig::PRIORITY_2.enabled;
+    }
+    else if (group_name == "P3")
+    {
+        return CommsConfig::PRIORITY_3.enabled;
+    }
+    else if (group_name == "F")
+    {
+        return CommsConfig::FLAGS.enabled;
+    }
+    else if (group_name == "LP")
+    {
+        return CommsConfig::LOW_PRIORITY.enabled;
+    }
+
+    return false; // default to false if group name is not recognized
+}
+
+String TelemetryManager::getGroup1_asString()
+{
+
+    String payload = ""; // no need to add header
+
+    // vx,vy, yaw, pitch, roll
+
+    auto lander_state = flightManager->getLander().getState();
+    TelemetryUtilities::addTelemetryField(payload, lander_state.velocity.X_SI, 2);
+    TelemetryUtilities::addTelemetryField(payload, lander_state.velocity.Y_SI, 2);
+    TelemetryUtilities::addTelemetryField(payload, lander_state.attitude.Yaw_SI, 2);
+    TelemetryUtilities::addTelemetryField(payload, lander_state.attitude.Pitch_SI, 2);
+    TelemetryUtilities::addTelemetryField(payload, lander_state.attitude.Roll_SI, 2);
+    return payload;
+}
+
+String TelemetryManager::getGroup2_asString()
+{
+    String payload = ""; // no need to add header
+
+    TelemetryUtilities::addTelemetryField(payload, 4.0);
+    TelemetryUtilities::addTelemetryField(payload, 5.0);
+    TelemetryUtilities::addTelemetryField(payload, 6.0);
+    return payload;
+}
+
+
+String TelemetryManager::getGroup3_asString()
+{
+    String payload = ""; // no need to add header
+
+    TelemetryUtilities::addTelemetryField(payload, 7.0);
+    TelemetryUtilities::addTelemetryField(payload, 8.0);
+    TelemetryUtilities::addTelemetryField(payload, 9.0);
+    return payload;
+}
+
+
+String TelemetryManager::getGroupFlags_asString()
+{
+    String payload = ""; // no need to add header
+
+    TelemetryUtilities::addTelemetryField(payload, true);
+    TelemetryUtilities::addTelemetryField(payload, false);
+    TelemetryUtilities::addTelemetryField(payload, true);
+    return payload;
+}
+
+
+String TelemetryManager::getGroupLowPriority_asString()
+{
+    String payload = ""; // no need to add header
+
+    TelemetryUtilities::addTelemetryField(payload, 10.0);
+    TelemetryUtilities::addTelemetryField(payload, 11.0);
+    TelemetryUtilities::addTelemetryField(payload, 12.0);
+    return payload;
+}
 

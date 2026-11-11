@@ -63,7 +63,7 @@ namespace CommsConfig {
         .output_enabled = true,
         .periodic_output_enabled = true,
         .frequency = 10.0f, // 2 Hz
-        .outputType = SerialOutputType::HUMAN_READABLE,
+        .outputType = SerialOutputType::BASE_STATION_FORMAT,
         .bufferSize = 30 // buffer size for incoming data
        
     };
@@ -71,19 +71,19 @@ namespace CommsConfig {
 
     constexpr GroupConfig PRIORITY_1 = {
         .name = "P1",
-        .frequency = 1.0f, // 12 Hz
+        .frequency = 10.0f, // 12 Hz
         .enabled = true
     };
 
     constexpr GroupConfig PRIORITY_2 = {
         .name = "P2",
-        .frequency = 5.0f, // 5 Hz
+        .frequency = 1.0f, // 5 Hz
         .enabled = true
     };
 
     constexpr GroupConfig PRIORITY_3 = {
         .name = "P3",
-        .frequency = 2.0f, // 2 Hz
+        .frequency = 1.0f, // 2 Hz
         .enabled = true
     };
 

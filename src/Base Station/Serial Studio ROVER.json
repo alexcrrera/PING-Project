@@ -65,7 +65,7 @@
     "frameDetection": 1,
     "frameEnd": "*\\n",
     "frameParser": "/**\n * Automatically migrated frame parser function.\n */\nfunction parse(frame) {\n    return frame.split(',');\n}",
-    "frameStart": "$LNDAS",
+    "frameStart": "$RVR",
     "groups": [
         {
             "datasets": [

@@ -1,0 +1,93 @@
+"""Decode rover groups and combine their latest readings by receive time."""
+
+from math import hypot, isfinite, tau
+
+from .model import RoverTelemetrySample, validate_sample
+
+
+GROUP_EXPIRY = {"P1": 1.5, "P2": 1.0, "P3": 1.5, "F": 2.5, "LP": 5.0}
+BRAKE_FLAGS = {"[OK]": True, "[X]": False, "1": True, "0": False}
+
+
+def _numbers(fields: tuple[str, ...], count: int) -> tuple[float, ...]:
+    if len(fields) != count:
+        raise ValueError(f"Expected {count} rover fields")
+    values = tuple(map(float, fields))
+    if not all(map(isfinite, values)):
+        raise ValueError("Rover readings must be finite")
+    return values
+
+
+def _decode_fields(group: str, fields: tuple[str, ...]) -> dict:
+    if group == "LP":
+        return {"low_priority_fields": fields}
+
+    if group == "F":
+        if len(fields) == 3 and all(flag in BRAKE_FLAGS for flag in fields):
+            return {}  # Current firmware bench packet.
+        if len(fields) != 2 or fields[0] not in BRAKE_FLAGS:
+            raise ValueError("Expected brake override and regime mode")
+        return {"brake_override": BRAKE_FLAGS[fields[0]], "regime_mode": fields[1]}
+
+    if len(fields) == 3:
+        _numbers(fields, 3)
+        return {}  # Bench readings have no assigned physical channels.
+
+    if group == "P1":
+        if len(fields) == 5:
+            vx, vy, yaw, pitch, roll = _numbers(fields, 5)
+            return {"velocity_body_mps": (vx, vy), "speed_mps": hypot(vx, vy),
+                    "heading_deg": yaw % 360.0, "pitch_deg": pitch, "roll_deg": roll}
+        speed, yaw, pitch, roll = _numbers(fields, 4)
+        return {"speed_mps": speed, "heading_deg": yaw % 360.0,
+                "pitch_deg": pitch, "roll_deg": roll}
+
+    if group == "P2":
+        values = _numbers(fields, 13)
+        return {"wheel_rpm": tuple(omega * 60 / tau for omega in values[:4]),
+                "wheel_slip": values[4:8], "motor_current_a": values[8:12],
+                "roll_deg": values[12]}
+
+    values = _numbers(fields, 11)
+    longitude, latitude, altitude, pitch, pan, distance1, distance2, validity = values[3:]
+    if not -180 <= longitude <= 180 or not -90 <= latitude <= 90:
+        raise ValueError("Rover coordinates out of range")
+    if validity not in range(4):
+        raise ValueError("Invalid gimbal distance validity mask")
+    mask = int(validity)
+    if (mask & 1 and distance1 < 0) or (mask & 2 and distance2 < 0):
+        raise ValueError("Valid gimbal distances must be nonnegative")
+    return {"acceleration_mps2": values[:3], "longitude_deg": longitude,
+            "latitude_deg": latitude, "altitude_m": altitude,
+            "gimbal_pitch_deg": pitch, "gimbal_pan_deg": pan,
+            "gimbal_distance_1_m": distance1 if mask & 1 else None,
+            "gimbal_distance_2_m": distance2 if mask & 2 else None,
+            "gimbal_validity": mask}
+
+
+class RoverGroups:
+    def __init__(self):
+        self._latest: dict[str, tuple[float, dict]] = {}
+
+    def reset(self) -> None:
+        self._latest.clear()
+
+    def decode(self, line: bytes, now: float) -> RoverTelemetrySample:
+        frame = line.rstrip(b"\r").decode("ascii")
+        if not frame.endswith("*") or "*" in frame[:-1] or "$" in frame[1:]:
+            raise ValueError("Invalid rover frame delimiters")
+        _, group, *tokens = frame[:-1].split(",")
+        fields = tuple(token.strip() for token in tokens)
+        if group not in GROUP_EXPIRY or not fields or not all(fields):
+            raise ValueError("Unknown or empty rover group")
+        values = _decode_fields(group, fields)
+        validate_sample(RoverTelemetrySample(received_at=now, **values))
+        self._latest[group] = (now, values)
+
+        merged = {}
+        # P1 carries the primary roll reading. P2 supplies roll when P1 expires.
+        for tag in ("P2", "P3", "F", "LP", "P1"):
+            timestamp, channels = self._latest.get(tag, (now, {}))
+            if now - timestamp < GROUP_EXPIRY[tag]:
+                merged.update(channels)
+        return RoverTelemetrySample(received_at=now, **merged)

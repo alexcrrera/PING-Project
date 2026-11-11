@@ -43,17 +43,7 @@ namespace TelemetryUtilities
     void addTelemetryGroup(String& payload, const BODY_coordinates& BODY_payload);
     void addTelemetryGroup(String& payload, const Rotation_Euler_coordinates& Euler_payload);
 
-        bool isGroupEnabled(const String& group_name);
 
-        String getGroupPayload(const String& group_name);
-
-    String getGroup1_asString();
-    String getGroup2_asString();
-    String getGroup3_asString();
-    String getGroupFlags_asString();
-    String getGroupLowPriority_asString();
-
-    String getGroupContent(const String& group_name);
 
 
 

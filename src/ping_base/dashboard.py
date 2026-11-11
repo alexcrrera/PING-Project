@@ -23,6 +23,7 @@ from .orientation import heading_indicator, pitch_indicator, roll_indicator, whe
 from .rover import RoverView
 from .station import BaseStation
 from .telemetry import RadioBenchSource, SerialTelemetrySource, SimulatedTelemetrySource
+from .telemetry.model import RoverTelemetrySample
 from .theme import CSS
 
 
@@ -44,9 +45,27 @@ def _icon(name: str) -> str:
     return f'<svg width="20" height="20" viewBox="0 0 24 26" fill="none" stroke="currentColor" stroke-width="1.1">{ICONS[name]}</svg>'
 
 
+def rover_group_details(sample: RoverTelemetrySample) -> str:
+    lines = []
+    if sample.acceleration_mps2 is not None:
+        ax, ay, az = sample.acceleration_mps2
+        lines.append(f"Accel XYZ {ax:+.2f}, {ay:+.2f}, {az:+.2f} m/s²")
+        lines.append(f"GPS {sample.latitude_deg:.6f}°, {sample.longitude_deg:.6f}° / {sample.altitude_m:.1f} m")
+        lines.append(f"Gimbal pitch {sample.gimbal_pitch_deg:+.1f}° / pan {sample.gimbal_pan_deg:+.1f}°")
+        ranges = (sample.gimbal_distance_1_m, sample.gimbal_distance_2_m)
+        rangeText = " / ".join(f"{value:.2f} m" if value is not None else "-" for value in ranges)
+        lines.append(f"Gimbal ranges {rangeText}")
+    if sample.brake_override is not None:
+        brake = "ON" if sample.brake_override else "OFF"
+        lines.append(f"Brake override {brake} / Regime {sample.regime_mode}")
+    if sample.low_priority_fields is not None:
+        lines.append("LP " + ", ".join(sample.low_priority_fields))
+    return "\n".join(lines)
+
+
 def sparkline(history, fresh: bool) -> str:
     """Only validated numbers enter this SVG; values are historical by design."""
-    values = [sample.speed_mps for sample in history][-300:]
+    values = [sample.speed_mps for sample in history if sample.speed_mps is not None][-300:]
     if len(values) < 2:
         return '<svg viewBox="0 0 244 46"><path d="M0 40H244" stroke="#36392f"/></svg>'
     ceiling = max(1.5, max(abs(value) for value in values))
@@ -386,6 +405,7 @@ class Dashboard:
                     ui.label("GROUND SPEED").classes("eyebrow")
                     ui.label("m/s").classes("small-meta")
                 self._label("speed", "—", "speed-value")
+                self._label("body_velocity", "", "subtext")
                 self.graph = ui.html(sparkline((), False), sanitize=False).classes("sparkline")
                 with ui.element("div").classes("graph-foot"):
                     self._label("history_label", "SPEED HISTORY")
@@ -418,6 +438,7 @@ class Dashboard:
                 self._label("packet_count", "0 VALID PACKETS", "subtext mt-2")
                 self._label("serial_link", "", "subtext mt-2")
                 self._label("serial_preview", "", "subtext").style("overflow-wrap:anywhere")
+                self._label("rover_groups", "", "subtext mt-2").style("white-space:pre-line;overflow-wrap:anywhere")
                 self.radio_test_button = ui.button("Send TEST line", icon="send", on_click=self.send_radio_test).props("outline dense")
             with ui.element("div").classes("telemetry-section").style("border-bottom:0"):
                 ui.label("DRIVE INPUT").classes("eyebrow")
@@ -456,7 +477,7 @@ class Dashboard:
             self.baud_input = ui.number("Baud rate", value=57600, min=1, precision=0).props("outlined dense")
             self.port_hint = ui.label("").classes("dialog-note")
             ui.button("Scan USB ports", icon="refresh", on_click=self.scan_ports).props("flat dense")
-            ui.label("COM3 and COM4 exchanged clean text at 57600 baud. Leonidas code currently configures Serial5 for 115200. Raw lines appear under Radio Link; metrics still need a matching decoder.").classes("dialog-note")
+            ui.label("Select the receiver port at 57600 baud. Rover groups and raw lines appear under Radio Link.").classes("dialog-note")
             self.font_note = ui.label("Suisse Light + Medium / local fonts" if self.has_suisse else "Suisse not found / use --font-dir to select its folder").classes("subtext")
             with ui.element("div").classes("dialog-actions"):
                 ui.button("Cancel", on_click=self.dialog.close).props("flat")
@@ -746,28 +767,43 @@ class Dashboard:
                   "voltage": ("battery_voltage", ".1f"), "temperature": ("motor_temp_c", ".1f"),
                   "distance": ("distance_m", ".1f"), "rssi": ("signal_rssi_dbm", ".0f"), "latency": ("latency_ms", ".0f")}
         for key, (attr, fmt) in fields.items():
-            self._text(key, format(getattr(sample, attr), fmt) if sample else "—")
+            value = getattr(sample, attr, None)
+            self._text(key, format(value, fmt) if value is not None else "-")
+        bodyVelocity = getattr(sample, "velocity_body_mps", None)
+        self.values["body_velocity"].set_visibility(bodyVelocity is not None)
+        self._text("body_velocity", f"Vx {bodyVelocity[0]:+.2f} / Vy {bodyVelocity[1]:+.2f} m/s"
+                   if bodyVelocity is not None else "")
+        groupDetails = rover_group_details(sample) if isinstance(sample, RoverTelemetrySample) else ""
+        self.values["rover_groups"].set_visibility(bool(groupDetails))
+        self._text("rover_groups", groupDetails)
         motion = self.station.virtual_rover.state
         vehicle_attitude = (motion if simulated else sample) if sample else None
         for key in ("pitch", "roll", "heading"):
             value = getattr(vehicle_attitude, key + "_deg") if vehicle_attitude else None
             text = f"{value:+.1f}°" if value is not None and key != "heading" else f"{round(value, 1) % 360:05.1f}°" if value is not None else "—"
             self._text(key, text)
-        self._text("overlay_speed", f"{sample.speed_mps:.2f}" if sample else "—")
+        speed = getattr(sample, "speed_mps", None)
+        self._text("overlay_speed", f"{speed:.2f}" if speed is not None else "—")
         camera_attitude = self.station.virtual_rover.state if self.gimbal_available else sample
-        camera_heading = (camera_attitude.heading_deg + (gimbal.yaw_deg if self.gimbal_available else 0)) % 360 if sample else 0
-        camera_pitch = camera_attitude.pitch_deg + (gimbal.pitch_deg if self.gimbal_available else 0) if sample else 0
-        self._text("overlay_heading", f"{round(camera_heading, 1) % 360:05.1f}°" if sample else "—")
-        self._text("overlay_pitch", f"{camera_pitch:+.1f}°" if sample else "—")
-        heading = round(camera_heading, 1) % 360 if sample else None
+        cameraYaw = getattr(camera_attitude, "heading_deg", None) if sample else None
+        camera_pitch = getattr(camera_attitude, "pitch_deg", None) if sample else None
+        cameraRoll = getattr(camera_attitude, "roll_deg", None) if sample else None
+        if sample and self.gimbal_available:
+            cameraYaw += gimbal.yaw_deg
+            camera_pitch += gimbal.pitch_deg
+            cameraRoll += gimbal.roll_deg
+        camera_heading = cameraYaw % 360 if cameraYaw is not None else None
+        heading = round(camera_heading, 1) % 360 if camera_heading is not None else None
+        self._text("overlay_heading", f"{heading:05.1f}°" if heading is not None else "-")
+        self._text("overlay_pitch", f"{camera_pitch:+.1f}°" if camera_pitch is not None else "-")
         if heading != self._last_heading:
             self.compass.set_content(heading_tape(heading))
             self._last_heading = heading
         # A USB rover and the virtual camera have independent poses. Only show
         # their bearings together when both belong to the shared simulation.
         orientation_camera = camera_heading if sample and simulated and self.gimbal_available else None
-        orientation = tuple(round(getattr(vehicle_attitude, axis + "_deg"), 1) if vehicle_attitude else None
-                            for axis in ("pitch", "roll", "heading")) + (
+        angles = (getattr(vehicle_attitude, axis + "_deg", None) for axis in ("pitch", "roll", "heading"))
+        orientation = tuple(round(value, 1) if value is not None else None for value in angles) + (
                                 round(orientation_camera, 1) if orientation_camera is not None else None,)
         if orientation != self._last_orientation:
             pitch, roll, heading, bearing = orientation
@@ -778,7 +814,7 @@ class Dashboard:
         self._text("orientation_camera", f"CAM {round(orientation_camera, 1) % 360:05.1f}°" if orientation_camera is not None else "CAM —")
         self._refresh_navigation(motion, available=sample is not None and simulated,
                                  simulated=simulated, camera_heading=orientation_camera)
-        self.battery_fill.style(f"width:{sample.battery_percent if sample else 0:.1f}%")
+        self.battery_fill.style(f"width:{getattr(sample, 'battery_percent', None) or 0:.1f}%")
         wheels = sample.wheel_slip if sample else None
         red_at = int(self.slip_threshold.value)
         thrust = self.station.virtual_rover.wheel_thrust if simulated else None
@@ -794,12 +830,13 @@ class Dashboard:
             if currents:
                 details += f" / {currents[i]:.2f} A"
             self.values[f"slip_{i}"].props(f'title="{escape(details)}"')
-        if sample:
+        poseAvailable = speed is not None and all(value is not None for value in orientation[:3])
+        if poseAvailable:
             self.rover.update(motion if simulated else sample)
         if simulated:
             self.rover.update_motion(motion)
         self._text("pose_position", f"X {motion.x_m:+.1f} m / Y {motion.y_m:+.1f} m" if simulated else "4WD / TEST MODEL")
-        self._text("pose_status", "VIRTUAL ATTITUDE" if simulated and sample else "TELEMETRY DRIVEN" if sample else "LAST POSE / NO FRESH DATA")
+        self._text("pose_status", "VIRTUAL ATTITUDE" if simulated and poseAvailable else "TELEMETRY DRIVEN" if poseAvailable else "LAST POSE / NO FRESH DATA")
         if self._last_history_count != state.received_count or self.values["history_label"].text != ("SPEED HISTORY" if sample else "HISTORY / NO FRESH DATA"):
             self.graph.set_content(sparkline(manager.history, state.connected))
             self._last_history_count = state.received_count
@@ -820,11 +857,10 @@ class Dashboard:
             self.camera_image.props(f'src="/api/camera/frame?{query}"')
             self._last_camera = frame.sequence
             self._text("camera_resolution", f"{frame.width} × {frame.height}")
-        show_horizon = self.filter_horizon.value and sample is not None and camera_fresh
+        show_horizon = self.filter_horizon.value and camera_fresh and camera_pitch is not None and cameraRoll is not None
         self.horizon.set_visibility(show_horizon)
         if show_horizon:
-            roll = camera_attitude.roll_deg + (gimbal.roll_deg if self.gimbal_available else 0)
-            attitude = (round(camera_pitch, 1), round(roll, 1))
+            attitude = (round(camera_pitch, 1), round(cameraRoll, 1))
             if attitude != self._last_horizon:
                 self.horizon.set_content(horizon_overlay(*attitude))
                 self._last_horizon = attitude

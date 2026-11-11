@@ -52,8 +52,8 @@ void StateEstimator::estimateAcceleration_BODY(LanderState& state, const SensorM
 void StateEstimator::estimateVelocity_BODY(LanderState& state, const SensorMeasurements& sensorMeasurements)
 {
    
-    state.velocity.X_SI = 0.0f; // Placeholder for actual velocity estimation logic
-    state.velocity.Y_SI = 123.23f; // Placeholder for actual velocity estimation logic
+    state.velocity.X_SI = 0.5f; // Placeholder for actual velocity estimation logic
+    state.velocity.Y_SI = 0.0f; // Placeholder for actual velocity estimation logic
     state.velocity.Z_SI = 12.58;
     state.validity.velocityValid = true; // Assuming velocity is valid if VN300 data is available
 }

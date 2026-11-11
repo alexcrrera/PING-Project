@@ -3,7 +3,7 @@
 from collections import deque
 from dataclasses import dataclass
 from enum import Enum
-from math import isfinite
+from math import inf, isfinite
 from time import monotonic
 from typing import Callable, Protocol
 
@@ -17,21 +17,40 @@ class TelemetrySample:
     """
 
     received_at: float
-    battery_voltage: float
-    battery_percent: float
-    speed_mps: float
-    heading_deg: float
-    pitch_deg: float
-    roll_deg: float
-    motor_temp_c: float
-    signal_rssi_dbm: float
-    latency_ms: float
-    distance_m: float
+    battery_voltage: float | None = None
+    battery_percent: float | None = None
+    speed_mps: float | None = None
+    heading_deg: float | None = None
+    pitch_deg: float | None = None
+    roll_deg: float | None = None
+    motor_temp_c: float | None = None
+    signal_rssi_dbm: float | None = None
+    latency_ms: float | None = None
+    distance_m: float | None = None
     # Wheel order: front-left, front-right, rear-left, rear-right. Missing
     # channels are unknown, never fabricated zero readings.
     wheel_rpm: tuple[float, float, float, float] | None = None
     wheel_slip: tuple[float, float, float, float] | None = None
     motor_current_a: tuple[float, float, float, float] | None = None
+
+
+@dataclass(frozen=True)
+class RoverTelemetrySample(TelemetrySample):
+    """Latest available fields from independent rover serial groups."""
+
+    velocity_body_mps: tuple[float, float] | None = None
+    acceleration_mps2: tuple[float, float, float] | None = None
+    longitude_deg: float | None = None
+    latitude_deg: float | None = None
+    altitude_m: float | None = None
+    gimbal_pitch_deg: float | None = None
+    gimbal_pan_deg: float | None = None
+    gimbal_distance_1_m: float | None = None
+    gimbal_distance_2_m: float | None = None
+    gimbal_validity: int | None = None
+    brake_override: bool | None = None
+    regime_mode: str | None = None
+    low_priority_fields: tuple[str, ...] | None = None
 
 
 # Shared by the sample validator and the example JSON protocol decoder.
@@ -59,10 +78,16 @@ def validate_sample(sample: TelemetrySample) -> None:
     """Reject nonfinite, boolean, out-of-range, and malformed adapter values."""
     if not isinstance(sample, TelemetrySample):
         raise ValueError("Expected TelemetrySample")
+    bodyVelocity = isinstance(sample, RoverTelemetrySample) and sample.velocity_body_mps is not None
     for name, (low, high) in FIELD_RANGES.items():
         value = getattr(sample, name)
+        if value is None and isinstance(sample, RoverTelemetrySample):
+            continue
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError(f"{name} must be a number")
+        if name == "speed_mps" and bodyVelocity:
+            # The firmware bench stream can send synthetic body velocities.
+            low, high = 0.0, inf
         if not low <= value <= high or not isfinite(value):
             raise ValueError(f"{name} outside [{low}, {high}]")
     if sample.heading_deg == 360.0:

@@ -142,6 +142,18 @@ private:
 
 
 
+    bool isGroupEnabled(const String& group_name);
+
+    String getGroupPayload(const String& group_name);
+
+    String getGroup1_asString();
+    String getGroup2_asString();
+    String getGroup3_asString();
+    String getGroupFlags_asString();
+    String getGroupLowPriority_asString();
+
+    String getGroupContent(const String& group_name);
+
 
   
 };

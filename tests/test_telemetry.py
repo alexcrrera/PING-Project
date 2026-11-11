@@ -244,6 +244,83 @@ class DecoderTests(unittest.TestCase):
 
 
 class SerialSourceTests(unittest.TestCase):
+    def test_rover_p1_body_velocity_updates_speed_and_attitude(self):
+        port = FakePort(b"$RVR,P1,0.00,123.23,-90.00,2.00,-3.00*\n")
+        manager = TelemetryManager(SerialTelemetrySource("COM3", serial_factory=lambda **kw: port))
+        state = manager.update(0)
+        self.assertTrue(state.connected)
+        self.assertEqual(state.sample.velocity_body_mps, (0.0, 123.23))
+        self.assertEqual(state.sample.speed_mps, 123.23)
+        self.assertEqual((state.sample.heading_deg, state.sample.pitch_deg, state.sample.roll_deg), (270, 2, -3))
+
+        port.data = b"$RVR,P1,nan,4,-90,2,-3*\n$RVR,P1,-3,4,-90,2,-3*\n"
+        state = manager.update(.1)
+        self.assertEqual((state.received_count, state.rejected_count), (2, 1))
+        self.assertEqual(state.sample.velocity_body_mps, (-3.0, 4.0))
+        self.assertEqual(state.sample.speed_mps, 5.0)
+
+    def test_rover_groups_decode_and_merge_through_the_serial_source(self):
+        port = FakePort(b"$RVR,P1,0.75,-90,")
+        manager = TelemetryManager(SerialTelemetrySource("COM3", serial_factory=lambda **kw: port))
+        self.assertEqual(manager.update(0).status, TelemetryStatus.WAITING)
+
+        port.data = (
+            b"2,-3*\r\n"
+            b"$RVR,P2,0,6.283185307179586,-6.283185307179586,0,0,.1,.2,.3,1,2,3,4,12*\n"
+            b"$RVR,P3,1,2,3,2.35,48.84,45,10,-20,2.5,-1,1*\n"
+            b"$RVR,F,[X],NAVIGATION_TRACTION*\n"
+            b"$RVR,LP,10.0,11.0,12.0*\n"
+        )
+        state = manager.update(.1)
+        reading = state.sample
+        self.assertTrue(state.connected)
+        self.assertEqual((state.received_count, state.rejected_count), (5, 0))
+        self.assertEqual((reading.speed_mps, reading.heading_deg, reading.pitch_deg, reading.roll_deg),
+                         (.75, 270, 2, -3))
+        for actual, expected in zip(reading.wheel_rpm, (0, 60, -60, 0), strict=True):
+            self.assertAlmostEqual(actual, expected)
+        self.assertEqual(reading.wheel_slip, (0, .1, .2, .3))
+        self.assertEqual(reading.motor_current_a, (1, 2, 3, 4))
+        self.assertEqual(reading.acceleration_mps2, (1, 2, 3))
+        self.assertEqual((reading.longitude_deg, reading.latitude_deg, reading.altitude_m), (2.35, 48.84, 45))
+        self.assertEqual((reading.gimbal_pitch_deg, reading.gimbal_pan_deg), (10, -20))
+        self.assertEqual(reading.gimbal_distance_1_m, 2.5)
+        self.assertIsNone(reading.gimbal_distance_2_m)
+        self.assertFalse(reading.brake_override)
+        self.assertEqual(reading.regime_mode, "NAVIGATION_TRACTION")
+        self.assertEqual(reading.low_priority_fields, ("10.0", "11.0", "12.0"))
+        self.assertIsNone(reading.battery_percent)
+
+    def test_rover_bench_packets_recovery_and_group_expiry(self):
+        port = FakePort(b"$RVR,P1,1.0,2.0,3.0*\n$RVR,P2,4.0,5.0,6.0*\n"
+                        b"$RVR,P3,7.0,8.0,9.0*\n$RVR,F,[OK],[X],[OK]*\n")
+        source = SerialTelemetrySource("COM3", serial_factory=lambda **kw: port)
+        manager = TelemetryManager(source)
+        state = manager.update(0)
+        self.assertTrue(state.connected)
+        self.assertEqual(state.received_count, 4)
+        self.assertIsNone(state.sample.speed_mps)
+        self.assertIsNone(state.sample.wheel_rpm)
+        self.assertIsNone(state.sample.brake_override)
+
+        port.data = b"$RVR,P1,1,2,3,4*\n"
+        self.assertEqual(manager.update(.1).sample.speed_mps, 1)
+        port.data = b"$RVR,P1,nan,2,3,4*\n$RVR,P1,0,0,0,0$RVR,P1,0,0,0,0*\n$RVR,F,[OK],AWAIT*\n"
+        state = manager.update(.2)
+        self.assertEqual(state.rejected_count, 2)
+        self.assertEqual(state.sample.speed_mps, 1)
+
+        port.data = b"$RVR,P2,0,0,0,0,0,0,0,0,0,0,0,0,-5*\n"
+        state = manager.update(1.7)
+        self.assertIsNone(state.sample.speed_mps)
+        self.assertEqual(state.sample.roll_deg, -5)
+        self.assertTrue(state.sample.brake_override)
+        source.decoder.reset()
+        port.data = b"$RVR,P1,1,2,3,4*\n"
+        state = manager.update(1.8)
+        self.assertIsNone(state.sample.wheel_rpm)
+        self.assertIsNone(state.sample.brake_override)
+
     def test_radio_bench_keeps_virtual_telemetry_when_radio_is_absent(self):
         def unavailable(**kwargs):
             raise OSError("radio unplugged")

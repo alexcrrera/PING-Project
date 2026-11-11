@@ -1,19 +1,39 @@
-# Prototype telemetry protocol
+# Serial telemetry protocol
 
-The rover's actual firmware protocol has not been supplied. This receive-only
-adapter demonstrates USB telemetry at **57600 baud**, 8 data bits, no parity,
-1 stop bit. It does not implement rover control, traction optimization, or
-transmit commands. Verify the firmware format before using real readings.
+Use **USB / serial receive only** in the dashboard with the receiving radio at
+**57600 baud**, 8 data bits, no parity, and 1 stop bit. **Radio Link** shows the
+port status, byte count, and last received line. This source sends no commands.
 
-The dashboard's connection dialog starts at 57600 baud, which was verified
-between the connected COM3 and COM4 radios. The Leonidas firmware currently
-configures Serial5 at 115200 baud, so that setting must be reconciled before
-connecting its Teensy to these radios. Under **Radio Link**, the GUI shows whether the
-selected host port opened, how many raw bytes arrived, and the last complete
-line even when this provisional JSON decoder rejects it. A `$LNDAS` line
-therefore confirms reception but will not populate rover metrics until a
-matching protocol adapter is implemented. The baud rate is editable; use
-the sender's actual rate for the prototype JSON stream described below.
+## Rover groups
+
+Each frame is `$RVR,<group>,<comma-separated fields>*\n`. CRLF is also accepted.
+Groups arrive independently and update the latest available readings.
+
+| Group | Rate | Fields in wire order |
+| --- | --- | --- |
+| `P1` | 10 Hz | Body velocity X and Y (m/s), yaw, pitch, roll (degrees) |
+| `P2` | 5 Hz | Four wheel angular speeds (rad/s), four slip ratios (0–1), four currents (A), roll (degrees) |
+| `P3` | 2 Hz | Acceleration X/Y/Z (m/s²), longitude and latitude (degrees), altitude (m), gimbal pitch and pan (degrees), distance estimates 1 and 2 (m), validity mask |
+| `F` | 1 Hz | Brake override (`[OK]`/`1` for true, `[X]`/`0` for false), regime mode |
+| `LP` | 0.5 Hz | Raw fields shown under Radio Link until their meanings are defined |
+
+For `P1`, the dashboard displays both velocity components and their magnitude
+as ground speed. Example `$RVR,P1,0.00,123.23,270.00,2.00,-3.00*` uses the
+firmware's current test velocity. The older four-field layout (ground speed,
+yaw, pitch, roll) still decodes.
+
+The order within each four-wheel block is front-left, front-right, rear-left,
+rear-right. The dashboard converts angular speed to RPM, normalizes yaw to
+0–360°, and uses `P2` roll when `P1` roll is unavailable. In the validity mask,
+bit 0 is distance 1 and bit 1 is distance 2. A clear bit leaves that range blank.
+
+The current three-number `P1`, `P2`, `P3` frames and three-flag `F` frames are
+accepted as bench traffic. These placeholder fields have no assigned readings.
+Missing channels stay blank. The cached `P1`, `P2`, `P3`, `F`, and `LP` readings
+expire after 1.5, 1, 1.5, 2.5, and 5 seconds respectively as the stream updates.
+Reconnecting discards cached group readings and partial frames.
+
+## Radio bench and legacy JSON
 
 The explicit **Radio bench** source also sends `TEST:HELLO,<sequence>\n` on a
 button press and `DRIVE:<sequence>,<throttle>,<steering>,<brake>\n` about every
@@ -28,7 +48,7 @@ the virtual terrain readings. Use one USB radio in the GUI and a serial app on
 the other, both at 57600 baud for the verified COM3/COM4 pair. The virtual
 terrain remains usable if the radio is unplugged.
 
-The prototype wire format is one UTF-8 JSON object per newline (`\n`, optionally
+The legacy wire format is one UTF-8 JSON object per newline (`\n`, optionally
 preceded by `\r`), at approximately 10 Hz. Each core field below is required. Wheel
 arrays are optional or `null`, which means unknown. Order is always front-left,
 front-right, rear-left, rear-right. Extra keys are ignored. The host stamps

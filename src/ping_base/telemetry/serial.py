@@ -1,15 +1,11 @@
-"""Receive-only USB serial telemetry and an explicitly provisional JSON codec.
-
-The actual rover wire format is not known yet. Replace ``decoder`` when the
-firmware protocol is agreed; transports and GUI do not need to change. See
-PROTOCOL.md beside this module for the example schema and bounds.
-"""
+"""Receive-only USB serial telemetry for rover groups and legacy JSON frames."""
 
 import json
 from math import isfinite
 from typing import Callable, Protocol
 
 from .model import FIELD_RANGES, WHEEL_FIELD_RANGES, TelemetrySample, validate_sample
+from .rvr import RoverGroups
 
 
 class TelemetryDecoder(Protocol):
@@ -85,6 +81,25 @@ class JsonLineTelemetryDecoder:
         return sample
 
 
+class SerialTelemetryDecoder(JsonLineTelemetryDecoder):
+    """Use the same bounded newline framing for rover and legacy JSON packets."""
+
+    def __init__(self, *, max_line_bytes: int = 4096):
+        super().__init__(max_line_bytes=max_line_bytes)
+        self._rover = RoverGroups()
+
+    def reset(self) -> None:
+        super().reset()
+        self._rover.reset()
+
+    def _decode(self, line: bytes, now: float) -> TelemetrySample:
+        if line.startswith(b"$RVR,"):
+            return self._rover.decode(line, now)
+        sample = super()._decode(line, now)
+        self._rover.reset()
+        return sample
+
+
 def _open_serial(**kwargs):
     # Import only when USB is selected; simulation works without pyserial.
     import serial
@@ -116,7 +131,7 @@ class SerialTelemetrySource:
         self.name = f"USB · {self.port} · {baudrate}"
         self.transport_connected = False
         self.error: str | None = None
-        self.decoder = decoder if decoder is not None else JsonLineTelemetryDecoder()
+        self.decoder = decoder if decoder is not None else SerialTelemetryDecoder()
         self._reconnect_interval = reconnect_interval
         self._max_read_bytes = max_read_bytes
         self._serial_factory = serial_factory or _open_serial
