@@ -2,16 +2,16 @@
 #include "src/FlightManager/FlightManager.h"
 
 
-FlightManager LEONIDAS;
+FlightManager ROVER;
 
 
 void setup()
 {
-    LEONIDAS.begin();
+    ROVER.begin();
 }
 
 
 void loop()
 {
-    LEONIDAS.update();
+    ROVER.update();
 }
