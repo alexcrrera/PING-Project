@@ -71,6 +71,81 @@ enum LanderError : uint16_t
     LANDER_ERROR_SOLUTION_STALE    = 1 << 7
 };
 
+struct WheelData
+{
+    float RPM = 0.0f;
+    float current_A = 0.0f;
+    
+    float estimated_torque_NM = 0.0f;
+    float estimated_slip_ratio = 0.0f;
+    
+};
+
+struct WheelGroupData
+{
+    WheelData front_left;
+    WheelData front_right;
+    WheelData rear_left;
+    WheelData rear_right;
+};
+
+
+struct group_GPS{
+    bool isValid = false;
+    float latitude_deg = 0.0f;
+    float longitude_deg = 0.0f;
+    float altitude_MSL_m = 0.0f;
+};
+
+struct ATVL{
+    float BODY_velocity_X_SI = 0.0f;
+    float BODY_velocity_Y_SI = 0.0f;
+    float yaw_DEG = 0.0f;
+    float pitch_DEG = 0.0f;
+    float roll_DEG = 0.0f;
+};
+
+struct WSST{
+    float RPM_FL = 0.0f;
+    float RPM_FR = 0.0f;
+    float RPM_RL = 0.0f;
+    float RPM_RR = 0.0f;
+
+    float estimated_slip_ratio_FL = 0.0f;
+    float estimated_slip_ratio_FR = 0.0f;
+    float estimated_slip_ratio_RL = 0.0f;
+    float estimated_slip_ratio_RR = 0.0f;
+
+};
+
+
+struct ACCL{
+    float BODY_linear_acceleration_X_SI = 0.0f;
+    float BODY_linear_acceleration_Y_SI = 0.0f;
+    float BODY_linear_acceleration_Z_SI = 0.0f;
+};
+
+struct WCT{
+    float estimated_torque_FL_NM = 0.0f;
+    float estimated_torque_FR_NM = 0.0f;
+    float estimated_torque_RL_NM = 0.0f;
+    float estimated_torque_RR_NM = 0.0f;
+
+
+};
+
+
+struct GMBL{
+    float estimated_horizontal_distance_1_M = 0.0f;
+    float estimated_horizontal_distance_2_M = 0.0f;
+    uint8_t estimation_validity = 0;
+    uint8_t gimbal_mode = 0;
+    float lidar_distance_M = 0.0f;
+    float pan_angle_DEG = 0.0f;
+    float tilt_angle_DEG = 0.0f;
+    
+};
+
 struct LanderState
 {
     // Local NED position [m]
@@ -96,6 +171,15 @@ struct LanderState
     STATE_MACHINE_STATES state = STATE_MACHINE_STATES::AWAIT; // Current state of the lander
 
     StateValidity validity;
+    
+    WheelGroupData wheel_data;
+
+    group_GPS group_GPS_data;
+    GMBL group_GMBL_data;
+    ATVL group_ATVL_data;
+    WSST group_WSST_data;
+    ACCL group_ACCL_data;
+    WCT group_WCT_data;
 
     
 

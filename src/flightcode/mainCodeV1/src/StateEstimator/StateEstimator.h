@@ -56,6 +56,8 @@ class StateEstimator
         void estimateVelocity_BODY(LanderState& state, const SensorMeasurements& sensorMeasurements);
         void estimatePosition_NED(LanderState& state, const SensorMeasurements& sensorMeasurements);
 
+        void updateStructs(LanderState& state, const SensorMeasurements& sensorMeasurements);
+
         bool home_position_set = false;
         
     };

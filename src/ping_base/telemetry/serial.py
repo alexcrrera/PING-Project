@@ -1,11 +1,17 @@
 """Receive-only USB serial telemetry for rover groups and legacy JSON frames."""
 
 import json
+from collections import deque
+from datetime import datetime
 from math import isfinite
 from typing import Callable, Protocol
 
 from .model import FIELD_RANGES, WHEEL_FIELD_RANGES, TelemetrySample, validate_sample
 from .rvr import RoverGroups
+
+
+RAW_LOG_LINES = 300
+RAW_LINE_BYTES = 4096
 
 
 class TelemetryDecoder(Protocol):
@@ -92,6 +98,10 @@ class SerialTelemetryDecoder(JsonLineTelemetryDecoder):
         super().reset()
         self._rover.reset()
 
+    @property
+    def latest_group_frames(self) -> dict[str, tuple[float, tuple[str, ...]]]:
+        return self._rover.latest_frames
+
     def _decode(self, line: bytes, now: float) -> TelemetrySample:
         if line.startswith(b"$RVR,"):
             return self._rover.decode(line, now)
@@ -142,10 +152,22 @@ class SerialTelemetrySource:
         self.last_byte_at: float | None = None
         self.last_raw_line: str | None = None
         self._raw_line = bytearray()
+        self._raw_line_truncated = False
+        self._raw_line_count = 0
+        self._raw_log: deque[tuple[datetime, str]] = deque(maxlen=RAW_LOG_LINES)
 
     @property
     def rejected_count(self) -> int:
         return self.decoder.rejected_count
+
+    @property
+    def latest_group_frames(self) -> dict[str, tuple[float, tuple[str, ...]]]:
+        return getattr(self.decoder, "latest_group_frames", {})
+
+    def raw_lines_since(self, cursor: int) -> tuple[int, tuple[tuple[datetime, str], ...]]:
+        """Read recent completed lines using a cursor local to each dashboard."""
+        count = min(self._raw_line_count - cursor, len(self._raw_log))
+        return self._raw_line_count, tuple(self._raw_log)[-count:] if count > 0 else ()
 
     def poll(self, now: float) -> tuple[TelemetrySample, ...]:
         if self._closed:
@@ -164,6 +186,7 @@ class SerialTelemetrySource:
                 self.last_byte_at = None
                 self.last_raw_line = None
                 self._raw_line.clear()
+                self._raw_line_truncated = False
             except (OSError, ValueError, ImportError) as exc:
                 self.error = f"Cannot open {self.port}: {exc}"
                 self.transport_connected = False
@@ -186,13 +209,22 @@ class SerialTelemetrySource:
             return
         self.bytes_received += len(data)
         self.last_byte_at = now
+        timestamp = datetime.now()
         for byte in data:
             if byte == 10:
-                if self._raw_line:
-                    self.last_raw_line = self._raw_line.decode("ascii", errors="replace").rstrip("\r")
+                line = self._raw_line.decode("ascii", errors="replace").rstrip("\r")
+                if self._raw_line_truncated:
+                    line += "…"
+                if line:
+                    self.last_raw_line = line if len(line) <= 160 else line[:159] + "…"
+                self._raw_log.append((timestamp, line))
+                self._raw_line_count += 1
                 self._raw_line.clear()
-            elif len(self._raw_line) < 160:
+                self._raw_line_truncated = False
+            elif len(self._raw_line) < RAW_LINE_BYTES:
                 self._raw_line.append(byte)
+            else:
+                self._raw_line_truncated = True
 
     def _drop_connection(self) -> None:
         if self._serial is not None:
@@ -204,6 +236,7 @@ class SerialTelemetrySource:
         self.transport_connected = False
         self.decoder.reset()
         self._raw_line.clear()
+        self._raw_line_truncated = False
 
     def close(self) -> None:
         self._closed = True

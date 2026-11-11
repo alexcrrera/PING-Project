@@ -9,29 +9,23 @@ port status, byte count, and last received line. This source sends no commands.
 Each frame is `$RVR,<group>,<comma-separated fields>*\n`. CRLF is also accepted.
 Groups arrive independently and update the latest available readings.
 
+When sending wheel data:
+Front-Left
+Front-right
+Rear-left
+Rear-right
+
 | Group | Rate | Fields in wire order |
 | --- | --- | --- |
-| `P1` | 10 Hz | Body velocity X and Y (m/s), yaw, pitch, roll (degrees) |
-| `P2` | 5 Hz | Four wheel angular speeds (rad/s), four slip ratios (0–1), four currents (A), roll (degrees) |
-| `P3` | 2 Hz | Acceleration X/Y/Z (m/s²), longitude and latitude (degrees), altitude (m), gimbal pitch and pan (degrees), distance estimates 1 and 2 (m), validity mask |
-| `F` | 1 Hz | Brake override (`[OK]`/`1` for true, `[X]`/`0` for false), regime mode |
-| `LP` | 0.5 Hz | Raw fields shown under Radio Link until their meanings are defined |
+| `ATVL` | 15 Hz | Body velocity X and Y (m/s), yaw, pitch, roll (degrees) |
+| `WSST` | 5 Hz | Four wheel angular speeds (RPM), four slip ratios (0–1)|
+| `ACCL` | 4 Hz | Acceleration X/Y/Z (m/s²), linearised (no gravity) in the body frame |
+| `WCT` | 3 Hz | 4 wheel currents (A), 4 wheel estimated torque (Nm) |
+| `BRK` | 1 Hz | Brake override (`[OK]`/`1` for true, `[X]`/`0` for false), regime mode |
+| `GPS` | 2 Hz | Availability (0 no, 1 yes), latitude longitude, altitude |
+| `GMBL` | 0.5 Hz | estimated distance horizontal 1, estimated distance 2, estimation validity (0 none, 1 estim good 2 bad, 2: 1 bad 2 good, 3: both good (we use different methods to calculate the horizontal distance from the rover and the measured point with the lidar )), gimbal mode (0: free, 1: yaw follow, 2: yaw and pitch follow), lidar distance, camera pan (body), pitch (body) caemra |
 
-For `P1`, the dashboard displays both velocity components and their magnitude
-as ground speed. Example `$RVR,P1,0.00,123.23,270.00,2.00,-3.00*` uses the
-firmware's current test velocity. The older four-field layout (ground speed,
-yaw, pitch, roll) still decodes.
 
-The order within each four-wheel block is front-left, front-right, rear-left,
-rear-right. The dashboard converts angular speed to RPM, normalizes yaw to
-0–360°, and uses `P2` roll when `P1` roll is unavailable. In the validity mask,
-bit 0 is distance 1 and bit 1 is distance 2. A clear bit leaves that range blank.
-
-The current three-number `P1`, `P2`, `P3` frames and three-flag `F` frames are
-accepted as bench traffic. These placeholder fields have no assigned readings.
-Missing channels stay blank. The cached `P1`, `P2`, `P3`, `F`, and `LP` readings
-expire after 1.5, 1, 1.5, 2.5, and 5 seconds respectively as the stream updates.
-Reconnecting discards cached group readings and partial frames.
 
 ## Radio bench and legacy JSON
 

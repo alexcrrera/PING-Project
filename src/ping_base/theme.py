@@ -29,7 +29,8 @@ button:focus-visible, a:focus-visible { outline:1px solid var(--accent)!importan
 .rail { border-right:1px solid var(--line); display:flex; flex-direction:column; align-items:center; padding:18px 0 16px; gap:16px; }
 .rail a { width:38px; height:38px; display:flex; align-items:center; justify-content:center; color:var(--dim); border-radius:3px; text-decoration:none; }
 .rail a:hover { color:var(--text); background:#ffffff06; }
-.rail a.active { color:var(--text); border:1px solid var(--line); background:#24251f; }
+.shell:not(:has(.telemetry-monitor:target)) .rail a.active,
+.shell:has(.telemetry-monitor:target) .rail a[href="#telemetry"] { color:var(--text); border:1px solid var(--line); background:#24251f; }
 .rail .rail-settings { margin-top:auto; color:var(--muted); }
 .workspace { padding:14px 24px 10px; min-width:0; }
 .intro { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:16px; }
@@ -37,6 +38,26 @@ button:focus-visible, a:focus-visible { outline:1px solid var(--accent)!importan
 .intro p { color:var(--muted); margin-top:4px; font-size:11px; }
 .intro-right { display:flex; gap:14px; align-items:center; }
 .layout { --side-width:284px; display:grid; grid-template-columns:var(--side-width) minmax(0,1fr) var(--side-width); grid-template-areas:"controls visuals telemetry"; gap:16px; align-items:start; }
+.telemetry-monitor { display:none; min-width:0; min-height:0; }
+.telemetry-monitor:target { display:flex; flex-direction:column; gap:16px; overflow:auto; }
+.workspace:has(.telemetry-monitor:target)>.layout { display:none; }
+.telemetry-mobile-link { display:none; color:var(--accent); font-size:11px; }
+.telemetry-group-columns { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,155px),1fr)); gap:12px; }
+.telemetry-group-card { min-width:0; }
+.telemetry-group-card .panel-head, .telemetry-terminal .panel-head { min-height:34px; flex-shrink:0; }
+.telemetry-group-card .panel-title { text-transform:uppercase; }
+.telemetry-group-status { margin:9px 12px 4px; font-size:10px; color:var(--muted); }
+.telemetry-group-fields { display:grid; grid-template-columns:minmax(0,1fr) auto; margin:0; padding:3px 12px 9px; font-size:11px; }
+.telemetry-group-fields dt, .telemetry-group-fields dd { padding:4px 0; margin:0; border-top:1px solid var(--line); }
+.telemetry-group-fields dt { color:var(--muted); }
+.telemetry-group-fields dd { padding-left:8px; max-width:100px; text-align:right; overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
+.telemetry-terminal { display:flex; flex-direction:column; flex:1 0 230px; min-height:230px; }
+.telemetry-terminal-log { flex:1; width:100%; background:#10120f; color:var(--accent); font:12px/1.6 ui-monospace,Consolas,monospace; }
+.telemetry-terminal-log .nicegui-label { padding:0 12px; white-space:pre-wrap; overflow-wrap:anywhere; }
+@media(max-width:800px) {
+    .workspace:not(:has(.telemetry-monitor:target)) .telemetry-open,
+    .workspace:has(.telemetry-monitor:target) .telemetry-back { display:inline; }
+}
 .visuals { grid-area:visuals; min-width:0; display:flex; flex-direction:column; gap:12px; }
 .tools-sidebar { grid-area:controls; display:flex; flex-direction:column; min-height:0; background:transparent; }
 .tools-sidebar>.panel-head { height:34px; flex:0 0 34px; padding:0 14px; }

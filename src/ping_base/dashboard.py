@@ -24,6 +24,8 @@ from .rover import RoverView
 from .station import BaseStation
 from .telemetry import RadioBenchSource, SerialTelemetrySource, SimulatedTelemetrySource
 from .telemetry.model import RoverTelemetrySample
+from .telemetry.rvr import GROUP_EXPIRY
+from .telemetry.serial import RAW_LOG_LINES
 from .theme import CSS
 
 
@@ -39,6 +41,18 @@ STABILIZATION_LABELS = {
     StabilizationMode.FOLLOW: ("FOLLOW", "Pitch locked · Roll level · Turns with rover"),
 }
 STABILIZATION_HINT = "Z: Off → Lock → Follow"
+
+GROUP_TITLES = {"P1": "Motion", "P2": "Wheels", "P3": "Sensors", "F": "Flags", "LP": "Low priority"}
+GROUP_FIELDS = {
+    ("P1", 5): ("Vx (m/s)", "Vy (m/s)", "Yaw (°)", "Pitch (°)", "Roll (°)"),
+    ("P1", 4): ("Speed (m/s)", "Yaw (°)", "Pitch (°)", "Roll (°)"),
+    ("P2", 13): tuple(f"{wheel} {channel}" for channel in ("ω (rad/s)", "slip", "current (A)")
+                      for wheel in ("FL", "FR", "RL", "RR")) + ("Roll (°)",),
+    ("P3", 11): ("Accel X (m/s²)", "Accel Y (m/s²)", "Accel Z (m/s²)", "Longitude (°)",
+                 "Latitude (°)", "Altitude (m)", "Gimbal pitch (°)", "Gimbal pan (°)",
+                 "Range 1 (m)", "Range 2 (m)", "Validity mask"),
+    ("F", 2): ("Brake override", "Regime"),
+}
 
 
 def _icon(name: str) -> str:
@@ -108,6 +122,9 @@ class Dashboard:
         self._last_horizon: tuple[float, float] | None = None
         self._last_orientation: tuple | None = None
         self._last_heading: float | None = None
+        self._group_fields: dict[str, tuple[str, ...] | None] = {}
+        self._log_source: SerialTelemetrySource | None = None
+        self._log_cursor = 0
         self._last_navigation: tuple | None = None
         self._navigation_trail: list[tuple[float, float]] = []
         self.map_expanded = False
@@ -171,6 +188,8 @@ class Dashboard:
                         ui.html("<h1>Rover operations</h1><p>Traction, stability &amp; terrain observation.</p>", sanitize=False)
                     with ui.element("div").classes("intro-right"):
                         self._label("rate", "VIRTUAL / 10 HZ", "small-meta")
+                        ui.link("Telemetry", "#telemetry").classes("telemetry-mobile-link telemetry-open")
+                        ui.link("Operations", "#vision").classes("telemetry-mobile-link telemetry-back")
                         self.pause_button = ui.button("Pause simulation", icon="pause", on_click=self.toggle_pause).props("flat dense")
                         ui.button("Connections", icon="tune", on_click=self.open_settings).props("outline dense")
                 with ui.element("div").classes("layout"):
@@ -179,6 +198,7 @@ class Dashboard:
                         self._camera()
                         self._pose()
                     self._telemetry()
+                self._telemetry_monitor()
                 with ui.element("footer").classes("footer"):
                     with ui.element("div").classes("footer-status"):
                         ui.element("span").classes("signal-dot")
@@ -396,7 +416,7 @@ class Dashboard:
                 ui.label(unit).classes("unit")
 
     def _telemetry(self) -> None:
-        with ui.element("aside").classes("panel telemetry").props('id="telemetry" aria-label="Robot telemetry"'):
+        with ui.element("aside").classes("panel telemetry").props('aria-label="Robot telemetry summary"'):
             with ui.element("div").classes("panel-head"):
                 ui.label("TELEMETRY").classes("panel-title")
                 self._label("link", "WAITING", "small-meta")
@@ -456,6 +476,52 @@ class Dashboard:
                 self._label("drive_hint", "W/S or ↑/↓ drive · A/D steer · Space brake", "control-hint")
                 ui.label("←/→ or R1/L1 camera zoom · M / Touchpad map · Enter / △ map zoom").classes("control-hint")
                 ui.label("× / X / R camera reset · Share / Z stabilization").classes("control-hint")
+
+    def _telemetry_monitor(self) -> None:
+        self.group_tables: dict[str, ui.html] = {}
+        with ui.element("section").classes("telemetry-monitor").props('id="telemetry" aria-label="Telemetry monitor"'):
+            with ui.element("div").classes("telemetry-group-columns"):
+                for group, title in GROUP_TITLES.items():
+                    with ui.element("section").classes("panel telemetry-group-card"):
+                        with ui.element("div").classes("panel-head"):
+                            ui.label(f"{group} / {title}").classes("panel-title")
+                        self._label(f"group_status_{group}", "Waiting", "telemetry-group-status")
+                        self.group_tables[group] = ui.html("", sanitize=False)
+            with ui.element("section").classes("panel telemetry-terminal"):
+                with ui.element("div").classes("panel-head"):
+                    ui.label("Serial receive log").classes("panel-title")
+                    self._label("terminal_status", "No serial source", "small-meta")
+                self.terminal_log = ui.log(max_lines=RAW_LOG_LINES).classes("telemetry-terminal-log")
+
+    def _refresh_telemetry_monitor(self, source: SerialTelemetrySource | None, now: float) -> None:
+        frames = source.latest_group_frames if source is not None else {}
+        for group, table in self.group_tables.items():
+            frame = frames.get(group)
+            fields = frame[1] if frame is not None else None
+            status = "Waiting"
+            if frame is not None:
+                status = "Stale" if now - frame[0] >= GROUP_EXPIRY[group] else "Received"
+            self._text(f"group_status_{group}", status)
+            if fields == self._group_fields.get(group):
+                continue
+            self._group_fields[group] = fields
+            labels = GROUP_FIELDS.get((group, len(fields)), ()) if fields else ()
+            rows = "".join(f"<dt>{escape(labels[i] if labels else f'Field {i + 1}')}</dt><dd>{escape(value)}</dd>"
+                           for i, value in enumerate(fields or ()))
+            table.set_content(f'<dl class="telemetry-group-fields">{rows}</dl>' if rows else "")
+
+        if source is not self._log_source:
+            self.terminal_log.clear()
+            self._log_source = source
+            self._log_cursor = 0
+        if source is None:
+            self._text("terminal_status", "No serial source")
+            return
+        self._log_cursor, lines = source.raw_lines_since(self._log_cursor)
+        for timestamp, line in lines:
+            self.terminal_log.push(f'{timestamp.time().isoformat(timespec="milliseconds")}  {line}')
+        self._text("terminal_status", f"{source.port} / {source.baudrate} baud" if self._log_cursor
+                   else f"{source.port} / waiting for lines")
 
     def _settings(self) -> None:
         with ui.dialog() as self.dialog, ui.card().classes("settings-card"):
@@ -746,6 +812,7 @@ class Dashboard:
         self._text("packet_count", f"{state.received_count:,} VALID / {state.rejected_count:,} REJECTED")
         self.radio_test_button.set_visibility(radio_bench)
         serial_visible = isinstance(source, SerialTelemetrySource)
+        self._refresh_telemetry_monitor(source if serial_visible else None, now)
         for key in ("serial_link", "serial_preview"):
             self.values[key].set_visibility(serial_visible)
         if serial_visible:

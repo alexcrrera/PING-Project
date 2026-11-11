@@ -67,7 +67,11 @@ def _decode_fields(group: str, fields: tuple[str, ...]) -> dict:
 
 class RoverGroups:
     def __init__(self):
-        self._latest: dict[str, tuple[float, dict]] = {}
+        self._latest: dict[str, tuple[float, tuple[str, ...], dict]] = {}
+
+    @property
+    def latest_frames(self) -> dict[str, tuple[float, tuple[str, ...]]]:
+        return {tag: (timestamp, fields) for tag, (timestamp, fields, _) in self._latest.items()}
 
     def reset(self) -> None:
         self._latest.clear()
@@ -82,12 +86,12 @@ class RoverGroups:
             raise ValueError("Unknown or empty rover group")
         values = _decode_fields(group, fields)
         validate_sample(RoverTelemetrySample(received_at=now, **values))
-        self._latest[group] = (now, values)
+        self._latest[group] = (now, fields, values)
 
         merged = {}
         # P1 carries the primary roll reading. P2 supplies roll when P1 expires.
         for tag in ("P2", "P3", "F", "LP", "P1"):
-            timestamp, channels = self._latest.get(tag, (now, {}))
+            timestamp, _, channels = self._latest.get(tag, (now, (), {}))
             if now - timestamp < GROUP_EXPIRY[tag]:
                 merged.update(channels)
         return RoverTelemetrySample(received_at=now, **merged)

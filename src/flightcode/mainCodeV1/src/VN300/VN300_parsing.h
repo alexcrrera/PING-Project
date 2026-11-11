@@ -29,8 +29,6 @@ void VN300Parsing::parse_YBA_LinearAccel_Gyro(char *payload, VN300Measurement& m
         measurement.ybaLinearAccelGyro.Yaw,
         measurement.ybaLinearAccelGyro.Pitch,
         measurement.ybaLinearAccelGyro.Roll,
-        measurement.ybaLinearAccelGyro.Roll,
-
         measurement.ybaLinearAccelGyro.LinAccelX,
         measurement.ybaLinearAccelGyro.LinAccelY,
         measurement.ybaLinearAccelGyro.LinAccelZ,

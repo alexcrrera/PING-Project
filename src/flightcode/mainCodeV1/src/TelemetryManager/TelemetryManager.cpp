@@ -395,12 +395,21 @@ String TelemetryManager::getGroup1_asString()
 }
 
 String TelemetryManager::getGroup2_asString()
+
 {
+
+    // wheel data
     String payload = ""; // no need to add header
 
-    TelemetryUtilities::addTelemetryField(payload, 4.0);
-    TelemetryUtilities::addTelemetryField(payload, 5.0);
-    TelemetryUtilities::addTelemetryField(payload, 6.0);
+
+
+    // send rpm only
+    auto wheel_data = flightManager->getLander().getState().wheel_data;
+
+    TelemetryUtilities::addTelemetryField(payload, wheel_data.front_left.RPM);
+    TelemetryUtilities::addTelemetryField(payload, wheel_data.front_right.RPM);
+    TelemetryUtilities::addTelemetryField(payload, wheel_data.rear_left.RPM);
+    TelemetryUtilities::addTelemetryField(payload, wheel_data.rear_right.RPM);
     return payload;
 }
 

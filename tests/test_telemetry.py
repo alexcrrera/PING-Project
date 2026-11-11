@@ -244,6 +244,32 @@ class DecoderTests(unittest.TestCase):
 
 
 class SerialSourceTests(unittest.TestCase):
+    def test_serial_monitor_keeps_latest_valid_groups_and_bounded_raw_lines(self):
+        port = FakePort(b"$RVR,P1,1,2,")
+        source = SerialTelemetrySource("COM5", serial_factory=lambda **kwargs: port)
+        source.poll(0)
+        self.assertEqual(source.raw_lines_since(0), (0, ()))
+        self.assertEqual(source.latest_group_frames, {})
+
+        port.data = b"3,4,5*\r\n$RVR,P1,nan,2,3,4,5*\n\n$RVR,P2,6,7,8*\n"
+        source.poll(.1)
+        self.assertEqual(source.latest_group_frames, {
+            "P1": (.1, ("1", "2", "3", "4", "5")), "P2": (.1, ("6", "7", "8")),
+        })
+        cursor, lines = source.raw_lines_since(0)
+        self.assertEqual(cursor, 4)
+        self.assertEqual([line for _, line in lines], [
+            "$RVR,P1,1,2,3,4,5*", "$RVR,P1,nan,2,3,4,5*", "", "$RVR,P2,6,7,8*",
+        ])
+        self.assertEqual(source.raw_lines_since(cursor), (cursor, ()))
+
+        port.data = b"debug\n" * 305
+        source.poll(.2)
+        cursor, lines = source.raw_lines_since(cursor)
+        self.assertEqual((cursor, len(lines)), (309, 300))
+        source.close()
+        self.assertEqual(source.latest_group_frames, {})
+
     def test_rover_p1_body_velocity_updates_speed_and_attitude(self):
         port = FakePort(b"$RVR,P1,0.00,123.23,-90.00,2.00,-3.00*\n")
         manager = TelemetryManager(SerialTelemetrySource("COM3", serial_factory=lambda **kw: port))

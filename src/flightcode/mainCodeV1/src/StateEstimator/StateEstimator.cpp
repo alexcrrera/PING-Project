@@ -29,9 +29,28 @@ void StateEstimator::update(SensorMeasurements& sensorMeasurements)
     estimateAcceleration_BODY(state, sensorMeasurements);
     estimateVelocity_BODY(state, sensorMeasurements);
     estimatePosition_NED(state, sensorMeasurements);
+
+    updateStructs(state, sensorMeasurements);
 }
 
 
+void StateEstimator::updateStructs(LanderState& state, const SensorMeasurements& sensorMeasurements)
+{
+
+
+    // ACCL
+    state.group_ACCL_data.BODY_linear_acceleration_X_SI = state.acceleration.X_SI;
+    state.group_ACCL_data.BODY_linear_acceleration_Y_SI = state.acceleration.Y_SI;
+    state.group_ACCL_data.BODY_linear_acceleration_Z_SI = state.acceleration.Z_SI;
+
+
+    // Update ATVL
+    state.group_ATVL_data.BODY_velocity_X_SI = state.velocity.X_SI;
+    state.group_ATVL_data.BODY_velocity_Y_SI = state.velocity.Y_SI;
+    state.group_ATVL_data.yaw_DEG = state.attitude.Yaw_SI;
+    state.group_ATVL_data.pitch_DEG = state.attitude.Pitch_SI;
+    state.group_ATVL_data.roll_DEG = state.attitude.Roll_SI;    
+}
 
 
 
@@ -53,7 +72,7 @@ void StateEstimator::estimateVelocity_BODY(LanderState& state, const SensorMeasu
 {
    
     state.velocity.X_SI = 0.5f; // Placeholder for actual velocity estimation logic
-    state.velocity.Y_SI = 0.0f; // Placeholder for actual velocity estimation logic
+    state.velocity.Y_SI = 0.1f; // Placeholder for actual velocity estimation logic
     state.velocity.Z_SI = 12.58;
     state.validity.velocityValid = true; // Assuming velocity is valid if VN300 data is available
 }
