@@ -40,7 +40,6 @@ namespace TelemetryUtilities
 
     void addTelemetryGroup(String& payload, const NED_coordinates& NED_payload);
     void addTelemetryGroup(String& payload, const Rotation_Euler_coordinates& Euler_payload);
-    void addDebugGroup  (String& payload, const EpsilonGroup& epsilon_group);
 
 
 

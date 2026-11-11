@@ -2,23 +2,15 @@
 
 
 enum class STATE_MACHINE_STATES {
-    BOOT,
-    AWAIT,
-    GO,
-    NOGO, // sensor error or other critical error, cannot proceed with launch, grounded
+    AWAIT, // the rover is waiting in idle mode
     
+    NAVIGATION_TRACTION,
+    NAVIGATION_NO_TRACTION, // the rover does not control the traction, but is still in navigation mode
+    NAVIGATION_OBSTACLE, // the rover is in obstacle mode - reduced velocity 
 
-    LAUNCH,
-    POST_LAUNCH_HOVER,
-    
-    NAVIGATION,
-   
-    PRE_LANDING,
-    LANDING,
+    FULLBRAKE, // the rover is in full brake mode, which means that the motors are braking and the rover is not moving
 
-    LANDED,
-    FORCE_LANDING,
-    ABORT
+    ABORT // rover is in abort mode
 };
 
 

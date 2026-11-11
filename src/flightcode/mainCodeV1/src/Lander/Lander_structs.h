@@ -90,7 +90,7 @@ struct LanderState
     // Body angular rates [deg/s]
     Rotation_Euler_coordinates angularVelocity;
 
-    STATE_MACHINE_STATES state = STATE_MACHINE_STATES::BOOT;
+    STATE_MACHINE_STATES state = STATE_MACHINE_STATES::AWAIT; // Current state of the lander
 
     StateValidity validity;
 

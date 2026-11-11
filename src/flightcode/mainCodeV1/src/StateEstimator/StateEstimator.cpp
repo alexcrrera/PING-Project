@@ -14,23 +14,7 @@ void StateEstimator::begin(FlightManager* flightManager_)
     
 }
 
-void StateEstimator::request_setHomePosition()
-{
 
-    
-    auto& state_machine = flight_manager->getStateMachine();
-    // send error feedback if not in BOOTED state
-
-    if(state_machine.isInFlight(state_machine.getState())){
-        auto& command_handler = flight_manager->getCommandHandler();
-        command_handler.setErrorFeedback("FLYING");
-        return; // do not set home position if in flight
-    }
-
-    auto& current_position = state.position;
-    home_position_NED = current_position; // set home position to current position
-    home_position_set = true;
-}
 
 bool StateEstimator::isFlightConditionValid(){
     return true; // placeholder for actual flight condition validation logic

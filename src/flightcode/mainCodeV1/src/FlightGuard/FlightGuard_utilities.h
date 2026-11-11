@@ -36,7 +36,7 @@ namespace FlightGuardUtilities {
     
     bool isRollPitchWithinBounds(float pitch_deg, float roll_deg);
     bool isYawWithinBounds(float yaw_deg);
-    bool isVerticalVelocityWithinBounds(float speed);
+   
     bool isHorizontalVelocityWithinBounds(float velocity_N, float velocity_E);
 
 

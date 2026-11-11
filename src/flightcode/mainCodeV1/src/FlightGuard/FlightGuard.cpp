@@ -14,7 +14,7 @@ void FlightGuard::update() {
 
 
        checkFlightConditions(); 
-    if(!regimeData.isFlying){
+    if(!regimeData.isDynamic){
         overrideFlags.EDF_enabled = false;
         overrideFlags.TVC_enabled = false;
        
@@ -47,9 +47,7 @@ void FlightGuard::checkFlightConditions() {
     overrideFlags.yaw_ok =
         FlightGuardUtilities::isYawWithinBounds(state.attitude.Yaw_SI);
 
-    overrideFlags.vertical_overspeed_ok =
-        FlightGuardUtilities::isVerticalVelocityWithinBounds(state.velocity.Down_SI);
-
+    
     overrideFlags.horizontal_overspeed_ok =
 
     FlightGuardUtilities::isHorizontalVelocityWithinBounds(state.velocity.East_SI,state.velocity.North_SI);

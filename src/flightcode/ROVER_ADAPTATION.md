@@ -19,8 +19,8 @@ before assigning pins or motor limits.
 | `FlightManager` update structure | Replace with `RoverManager` and a defined, timed sensor/command/estimator/output loop. |
 | `TelemetryManager` serial framing and port handling | Rework into a versioned rover protocol with command sequence numbers, timestamps, validation, and acknowledgements. |
 | `VN300`, `Lidar`, `OpticalFlow` drivers | Reuse only if the rover has those exact devices and electrical interfaces. Add measurement timestamps, timeouts, and rover coordinate transforms. |
-| `PID` implementation | Reuse after checking timing, output limits, integrator reset, and saturation behavior with wheel speed control. |
-| `StateMachine` concept | Replace flight states with `BOOT`, `DISARMED`, `READY`, `DRIVING`, and `FAULT`. |
+| `PID` implementation | Reuse after checking timing, output limits, integrator reset, and saturation behavior with wheel speed control. 
+| `StateMachine` concept | Replace flight states with , `DISARMED`, `READY`, `DRIVING`, and `FAULT`. |
 | `FlightGuard` concept | Replace flight bounds with rover interlocks and make its result gate every motor output. |
 
 The flight `ctrler`, `MotorManager`, `ActuatorPWM`, and aerodynamic

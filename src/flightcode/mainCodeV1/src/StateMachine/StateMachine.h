@@ -18,7 +18,7 @@ class StateMachine {
         String getStateAsString() const;
         String getStateAsString(STATE_MACHINE_STATES state) const;
 
-        bool isInFlight(STATE_MACHINE_STATES state) const;
+        bool isDynamic(STATE_MACHINE_STATES state) const;
         FlightRegimeData getCurrentFlightRegimeData() const;
 
         void requestStateChange(STATE_MACHINE_STATES new_state); // requests a state change, but the actual change will be handled by the flight manager based on conditions

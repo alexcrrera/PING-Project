@@ -15,10 +15,7 @@ bool FlightGuardUtilities::isYawWithinBounds(float yaw_deg) {
     return Utilities::isSimpleBouded(yaw_deg, max_val_deg);
 }
 
-bool FlightGuardUtilities::isVerticalVelocityWithinBounds(float speed) {
-    auto max_speed = SafetyBounds::max_vertical_velocity_ms;
-    return Utilities::isSimpleBouded(speed, max_speed);
-}
+
 
 bool FlightGuardUtilities::isHorizontalVelocityWithinBounds(float velocity_N, float velocity_E) {
     auto max_speed = SafetyBounds::max_horizontal_velocity_ms;
@@ -30,7 +27,7 @@ bool FlightGuardUtilities::isHorizontalVelocityWithinBounds(float velocity_N, fl
 
 void FlightGuardUtilities::resetOverrideFlags(FlightGuardOverrideFlags& flags){
 
-    flags.vertical_overspeed_ok = true;
+
     flags.horizontal_overspeed_ok = true;
     flags.altitude_limit_ok = true;
     flags.NED_horizontal_boundary_ok= true;

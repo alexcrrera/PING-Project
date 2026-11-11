@@ -7,14 +7,8 @@
     void CommandHandler::parseCommand(String header, String payload)
 {
     Serial.println("Command received: " + header + " with payload: " + payload + "|");
-    if(header == "SET_HOME"){
-        
-        setOKFeedback(header);
-        Serial.println("Set home command received");
-        auto& state_estimator = flight_manager->getLander().getStateEstimator();
-        state_estimator.request_setHomePosition();
-        return;
-    }
+
+    
 
     if(header == "YAW_ZERO"){
         setOKFeedback(header);

@@ -54,7 +54,7 @@ String TelemetryManager::get_telemetry_payload()
     // 21 - motor safety status
     TelemetryUtilities::addTelemetryField(payload, flightManager->getFlightGuard().motorSafetyStatus());
     // overspeed status - 22
-    TelemetryUtilities::addTelemetryField(payload, flightManager->getFlightGuard().overrideFlags.vertical_overspeed_ok);
+    TelemetryUtilities::addTelemetryField(payload, true);
     
     // horizontal overspeed status - 23
     TelemetryUtilities::addTelemetryField(payload, flightManager->getFlightGuard().overrideFlags.horizontal_overspeed_ok);

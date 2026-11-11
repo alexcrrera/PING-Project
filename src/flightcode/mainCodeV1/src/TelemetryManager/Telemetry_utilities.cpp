@@ -84,28 +84,27 @@ String TelemetryUtilities::getFlightRegimeDataAsString(const FlightRegimeData& r
 {
     String payload = "";
     addDebugGroup(payload, "Flight Regime Data : " + String(regime_data.name));
-    addDebugGroup(payload, regime_data.epsilon_group);
-    addDebugField(payload, "Is Flying", regime_data.isFlying);
+
+    addDebugField(payload, "Is Dynamic", regime_data.isDynamic);
     
-    addDebugField(payload, "Max Pitch/Roll Velocity", regime_data.max_pitch_roll_velocity_degs);
+
     addDebugField(payload, "Max Yaw Velocity", regime_data.max_yaw_velocity_degs);
-    addDebugField(payload, "Max Pitch/Roll Acceleration", regime_data.max_pitch_roll_acceleration_degs2);
     addDebugField(payload, "Max Yaw Acceleration", regime_data.max_yaw_acceleration_degs2);
-    
+
+    addDebugField(payload, "Pitch/Roll Abort Angle", regime_data.pitch_roll_abort_angle_deg);
+    addDebugField(payload, "Yaw Abort Angle", regime_data.yaw_abort_angle_deg);
+
+    // velocities
+    addDebugField(payload, "Max Horizontal Velocity", regime_data.max_horizontal_velocity_ms);
+    addDebugField(payload, "Max Horizontal Acceleration", regime_data.max_horizontal_acceleration_ms2);
+
+    addDebugField(payload, "Min Thrust Percentage", regime_data.min_thrust_percentage);
+    addDebugField(payload, "Max Thrust Percentage", regime_data.max_thrust_percentage);
 
     return payload;
 }
 
 
-void TelemetryUtilities::addDebugGroup(String& payload, const EpsilonGroup& epsilon_group)
-{
-    addDebugField(payload, "Epsilon Horizontal", epsilon_group.epsH);
-    addDebugField(payload, "Epsilon Vertical", epsilon_group.epsV);
-    addDebugField(payload, "Epsilon Yaw", epsilon_group.epsYaw);
-
-   
-
-}
 
 
 void TelemetryUtilities::addTelemetryGroup(String& payload, const NED_coordinates& NED_payload)

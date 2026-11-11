@@ -12,34 +12,20 @@ String StateMachine::getStateAsString(STATE_MACHINE_STATES state) const{
     switch (state) {
         case STATE_MACHINE_STATES::AWAIT:
             return "AWAIT";
+
+        case STATE_MACHINE_STATES::NAVIGATION_TRACTION:
+            return "NAVIGATION_TRACTION";
+        
+        case STATE_MACHINE_STATES::NAVIGATION_NO_TRACTION:
+            return "NAVIGATION_NO_TRACTION";
+        
+        case STATE_MACHINE_STATES::NAVIGATION_OBSTACLE:
+            return "NAVIGATION_OBSTACLE";
+        
+        case STATE_MACHINE_STATES::FULLBRAKE:
+            return "FULLBRAKE";
         
 
-        case STATE_MACHINE_STATES::LAUNCH:
-            return "LAUNCH";
-
-    
-        case STATE_MACHINE_STATES::NOGO:
-            return "NO GO - GROUNDED";
-
-        case STATE_MACHINE_STATES::BOOT:
-            return "BOOTING";
-
-
-        case STATE_MACHINE_STATES::LANDING:
-            return "LANDING";
-        case STATE_MACHINE_STATES::LANDED:
-            return "LANDED";
-
-        case STATE_MACHINE_STATES::NAVIGATION:
-            return "NAVIGATION";
-
-        case STATE_MACHINE_STATES::POST_LAUNCH_HOVER:
-            return "POST LAUNCH HOVER";
-
-        case STATE_MACHINE_STATES::PRE_LANDING:
-            return "PRE LANDING";
-        case STATE_MACHINE_STATES::FORCE_LANDING:
-            return "FORCE LANDING";
         case STATE_MACHINE_STATES::ABORT:
             return "ABORT";
 
@@ -57,12 +43,12 @@ String StateMachine::getStateAsString(STATE_MACHINE_STATES state) const{
 void StateMachine::begin(FlightManager* flight_manager_){
     // initialize the state machine with a pointer to the flight manager
     flight_manager = flight_manager_;
-    current_state = STATE_MACHINE_STATES::BOOT;
+    current_state = STATE_MACHINE_STATES::AWAIT; // set the initial state to AWAIT, which is the state where the lander is waiting for a command to take off
 }
 
 void StateMachine::update(){
 
-    if(isInFlight(current_state)){
+    if(isDynamic(current_state)){
         flight_manager->getFlightGuard().overrideFlags.EDF_enabled = true;
         flight_manager->getFlightGuard().overrideFlags.TVC_enabled = true;
     }
@@ -113,11 +99,7 @@ bool StateMachine::verifyChange(STATE_MACHINE_STATES new_state){
         return true;
     }
 
-    if(new_state == STATE_MACHINE_STATES::LAUNCH){
-        if(!handleTakeOff_request()){
-            return false;
-        }
-    }
+
     return true;
 }
 
@@ -129,55 +111,40 @@ void StateMachine::setState(STATE_MACHINE_STATES new_state){
 
 
 
-bool StateMachine::isInFlight(STATE_MACHINE_STATES state)const {
-    return (
-            state == STATE_MACHINE_STATES::LAUNCH ||
-
-            state == STATE_MACHINE_STATES::POST_LAUNCH_HOVER ||
-
-            state == STATE_MACHINE_STATES::NAVIGATION ||
-
-            state == STATE_MACHINE_STATES::PRE_LANDING ||
-            
-            state == STATE_MACHINE_STATES::LANDING 
-           
-        );
+bool StateMachine::isDynamic(STATE_MACHINE_STATES state)const {
+    return ( state == STATE_MACHINE_STATES::NAVIGATION_TRACTION ||
+             state == STATE_MACHINE_STATES::NAVIGATION_NO_TRACTION ||
+             state == STATE_MACHINE_STATES::NAVIGATION_OBSTACLE );
 }
 
 
 FlightRegimeData StateMachine::getCurrentFlightRegimeData() const {
     
     switch(current_state){
-        case STATE_MACHINE_STATES::LAUNCH:
-            return FlightRegimeConfig::TAKEOFF;
-
-         case STATE_MACHINE_STATES::POST_LAUNCH_HOVER:
-            return FlightRegimeConfig::TAKEOFF; 
-
-    
-            
-            case STATE_MACHINE_STATES::NOGO:
-            return FlightRegimeConfig::GROUND;
 
 
+        case STATE_MACHINE_STATES::NAVIGATION_TRACTION:
+            return FlightRegimeConfig::NAVIGATION_TRACTION;
+
+        case STATE_MACHINE_STATES::NAVIGATION_NO_TRACTION:
+            return FlightRegimeConfig::NAVIGATION_NO_TRACTION;
+
+        case STATE_MACHINE_STATES::NAVIGATION_OBSTACLE:
+            return FlightRegimeConfig::NAVIGATION_OBSTACLE;
 
 
-        case STATE_MACHINE_STATES::NAVIGATION:
-            return FlightRegimeConfig::NAVIGATION;
-
-
-
-        case STATE_MACHINE_STATES::PRE_LANDING:
-            return FlightRegimeConfig::PRE_LANDING;
-
-        case STATE_MACHINE_STATES::LANDING:
-            return FlightRegimeConfig::LANDING;
-
-       
+        case STATE_MACHINE_STATES::AWAIT:
+            return FlightRegimeConfig::FULLBRAKE;
         
+        case STATE_MACHINE_STATES::FULLBRAKE:
+            return FlightRegimeConfig::FULLBRAKE;
+
+        
+        case STATE_MACHINE_STATES::ABORT:
+            return FlightRegimeConfig::FULLBRAKE;
 
         default:
-            return FlightRegimeConfig::GROUND;
+            return FlightRegimeConfig::FULLBRAKE;
     }
 }
 
