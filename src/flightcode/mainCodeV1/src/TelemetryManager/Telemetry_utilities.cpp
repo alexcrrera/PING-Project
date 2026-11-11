@@ -141,3 +141,127 @@ void TelemetryUtilities::addTelemetryGroup(String& payload, const Rotation_Euler
 
 
 
+
+String TelemetryUtilities::getGroupPayload(const String& group_name)
+{
+    String payload = "";
+    payload += CommsConfig::outputHeaderTelemetryFormat;
+    payload += "," + group_name + ",";
+
+   payload += getGroupContent(group_name);
+    payload += CommsConfig::outputLineEndingTelemetryFormat;
+    return payload;
+}
+
+
+String TelemetryUtilities::getGroupContent(const String& group_name)
+{
+
+    if(group_name == "P1")
+    {
+        return getGroup1_asString();
+    }
+    else if(group_name == "P2")
+    {
+        return getGroup2_asString();
+    }
+    else if(group_name == "P3")
+    {
+        return getGroup3_asString();
+    }
+    else if(group_name == "F")
+    {
+        return getGroupFlags_asString();
+    }
+    else if(group_name == "LP")
+    {
+        return getGroupLowPriority_asString();
+    }
+
+    return "ERR_UNKNOWN_GROUP";
+ 
+}
+
+
+bool TelemetryUtilities::isGroupEnabled(const String& group_name)
+{
+    if (group_name == "P1")
+    {
+        return CommsConfig::PRIORITY_1.enabled;
+    }
+    else if (group_name == "P2")
+    {
+        return CommsConfig::PRIORITY_2.enabled;
+    }
+    else if (group_name == "P3")
+    {
+        return CommsConfig::PRIORITY_3.enabled;
+    }
+    else if (group_name == "F")
+    {
+        return CommsConfig::FLAGS.enabled;
+    }
+    else if (group_name == "LP")
+    {
+        return CommsConfig::LOW_PRIORITY.enabled;
+    }
+
+    return false; // default to false if group name is not recognized
+}
+
+
+
+String TelemetryUtilities::getGroup1_asString()
+{
+
+    String payload = ""; // no need to add header
+
+    addTelemetryField(payload, 1.0);
+    addTelemetryField(payload, 2.0);
+    addTelemetryField(payload, 3.0);
+    return payload;
+}
+
+String TelemetryUtilities::getGroup2_asString()
+{
+    String payload = ""; // no need to add header
+
+    addTelemetryField(payload, 4.0);
+    addTelemetryField(payload, 5.0);
+    addTelemetryField(payload, 6.0);
+    return payload;
+}
+
+
+String TelemetryUtilities::getGroup3_asString()
+{
+    String payload = ""; // no need to add header
+
+    addTelemetryField(payload, 7.0);
+    addTelemetryField(payload, 8.0);
+    addTelemetryField(payload, 9.0);
+    return payload;
+}
+
+
+String TelemetryUtilities::getGroupFlags_asString()
+{
+    String payload = ""; // no need to add header
+
+    addTelemetryField(payload, true);
+    addTelemetryField(payload, false);
+    addTelemetryField(payload, true);
+    return payload;
+}
+
+
+String TelemetryUtilities::getGroupLowPriority_asString()
+{
+    String payload = ""; // no need to add header
+
+    addTelemetryField(payload, 10.0);
+    addTelemetryField(payload, 11.0);
+    addTelemetryField(payload, 12.0);
+    return payload;
+}
+

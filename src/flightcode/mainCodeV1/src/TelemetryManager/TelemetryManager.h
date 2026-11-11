@@ -72,6 +72,12 @@ private:
     void handleInput();
     void handle_USB_input();
     void handle_RADIO_input();
+
+
+
+
+    void send_group(const String& group_name);
+
      String get_debug_payload();
 
     String get_telemetry_payload();
@@ -127,6 +133,13 @@ private:
 
     bool USB_output_initialized = false;
     bool RADIO_output_initialized = false;
+
+    Handler priority_1_handler;
+    Handler priority_2_handler;
+    Handler priority_3_handler;
+    Handler flags_handler;
+    Handler low_priority_handler;
+
 
 
 

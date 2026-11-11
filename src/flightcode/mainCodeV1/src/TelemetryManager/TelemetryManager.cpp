@@ -20,6 +20,12 @@ void TelemetryManager::begin()
 
     send_USB_String("INIT START OF TELEM",true);
 
+    priority_1_handler.begin(CommsConfig::PRIORITY_1.frequency,this,&TelemetryManager::send_group,CommsConfig::PRIORITY_1.name);
+    priority_2_handler.begin(CommsConfig::PRIORITY_2.frequency,this,&TelemetryManager::send_group,CommsConfig::PRIORITY_2.name);
+    priority_3_handler.begin(CommsConfig::PRIORITY_3.frequency,this,&TelemetryManager::send_group,CommsConfig::PRIORITY_3.name);
+    flags_handler.begin(CommsConfig::FLAGS.frequency,this,&TelemetryManager::send_group,CommsConfig::FLAGS.name);
+    low_priority_handler.begin(CommsConfig::LOW_PRIORITY.frequency,this,&TelemetryManager::send_group,CommsConfig::LOW_PRIORITY.name);
+
     if (CommsConfig::USB.enabled)
     {
         
@@ -48,17 +54,51 @@ void TelemetryManager::begin()
 }
 
 
+void TelemetryManager::send_group(const String& group_name)
+{
+    
+    String payload = TelemetryUtilities::getGroupPayload(group_name);
+
+
+    if(CommsConfig::USB.outputType == SerialOutputType::GROUP_FORMAT){
+
+        if (USB_output_enabled && USB_output_initialized && TelemetryUtilities::isGroupEnabled(group_name))
+            {
+                send_USB_String(payload,true);
+            }
+    }
+
+    if(CommsConfig::RADIO.outputType == SerialOutputType::GROUP_FORMAT){
+
+        if (RADIO_output_enabled && RADIO_output_initialized && TelemetryUtilities::isGroupEnabled(group_name))
+            {
+                send_RADIO_String(payload,true);
+            }
+    }
+
+  
+    
+}
 
 
 void TelemetryManager::update(uint32_t now)
 {
     handleInput();
 
+    priority_1_handler.handle();
+    priority_2_handler.handle();
+    priority_3_handler.handle();
+    flags_handler.handle();
+    low_priority_handler.handle();
+
     // --------------------------------------------------------
     // USB
     // --------------------------------------------------------
     if (USB_output_initialized && USB_periodic_output_enabled)
     {
+
+
+
     if (now - USB_last_output_time >=static_cast<uint32_t>(1000.0f / CommsConfig::USB.frequency)){
         
         USB_last_output_time = now;
@@ -94,34 +134,19 @@ void TelemetryManager::update(uint32_t now)
             if (RADIO_output_type ==SerialOutputType::HUMAN_READABLE){
                 
                 send_RADIO_String(get_debug_payload(),false);
+                return;
             }
-            else
-            {
+
+            if (RADIO_output_type ==SerialOutputType::BASE_STATION_FORMAT){
+                
                 send_RADIO_String(get_telemetry_payload(),false);
+                return;
             }
+            return;
+            
         }
     }
 }
-
-
-
-// ============================================================
-// TELEMETRY PAYLOAD
-// ============================================================
-
-
-// ============================================================
-// DEBUG PAYLOAD
-// ============================================================
-
-
-
-
-
-
-
-
-
 
 
 
@@ -206,34 +231,7 @@ void TelemetryManager::handle_RADIO_input()
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// ============================================================
-// RADIO OUTPUT
-// ============================================================
-
-void TelemetryManager::send_RADIO_String(
-    const String& content,
-    bool jumpToNextLine
-)
+void TelemetryManager::send_RADIO_String(const String& content,bool jumpToNextLine)
 {
     
     if(!RADIO_output_enabled || !RADIO_output_initialized){
@@ -255,10 +253,7 @@ void TelemetryManager::send_RADIO_String(
 // USB OUTPUT
 // ============================================================
 
-void TelemetryManager::send_USB_String(
-    const String& content,
-    bool jumpToNextLine
-)
+void TelemetryManager::send_USB_String(const String& content,bool jumpToNextLine)
 {
 
     if(!USB_output_enabled || !USB_output_initialized){
@@ -273,15 +268,6 @@ void TelemetryManager::send_USB_String(
         USB_port->print("\n");
     }
 }
-
-
-
-
-
-
-// ============================================================
-// OUTPUT CONTROL
-// ============================================================
 
 void TelemetryManager::toggle_RADIO(bool enable)
 {
@@ -319,8 +305,6 @@ void TelemetryManager::toggle_RADIO_periodic()
     RADIO_periodic_output_enabled = !RADIO_periodic_output_enabled;
 }
 
-
-
 void TelemetryManager::toggle_USB(bool enable)
 {
     if (!USB_output_initialized)
@@ -331,8 +315,6 @@ void TelemetryManager::toggle_USB(bool enable)
 
     USB_output_enabled = enable;
 }
-
-
 
 
 void TelemetryManager::toggle_USB()

@@ -8,6 +8,7 @@
 enum class SerialOutputType {
     HUMAN_READABLE, 
     BASE_STATION_FORMAT, // $LNDAS,val1,val2,...,valn,*\n
+    GROUP_FORMAT
 };
 
 struct SerialPortConfig {
@@ -31,6 +32,12 @@ struct SerialPortConfig {
 };
 
 
+struct GroupConfig {
+    const char* name;
+    float frequency;
+    bool enabled = true; // default to true, can be set to false if the group is not needed
+};
+
 namespace CommsConfig {
 
     
@@ -43,7 +50,7 @@ namespace CommsConfig {
         .output_enabled = true,
         .periodic_output_enabled = true,
         .frequency = 10.0f, // 10 Hz
-        .outputType = SerialOutputType::BASE_STATION_FORMAT,
+        .outputType = SerialOutputType::GROUP_FORMAT,
         .bufferSize = 30 // buffer size for incoming data
     };
 
@@ -62,8 +69,43 @@ namespace CommsConfig {
     };
 
 
+    constexpr GroupConfig PRIORITY_1 = {
+        .name = "P1",
+        .frequency = 1.0f, // 12 Hz
+        .enabled = true
+    };
+
+    constexpr GroupConfig PRIORITY_2 = {
+        .name = "P2",
+        .frequency = 5.0f, // 5 Hz
+        .enabled = true
+    };
+
+    constexpr GroupConfig PRIORITY_3 = {
+        .name = "P3",
+        .frequency = 2.0f, // 2 Hz
+        .enabled = true
+    };
+
+    constexpr GroupConfig FLAGS = {
+        .name = "F",
+        .frequency = 1.0f, // 1 Hz
+        .enabled = true
+    };
+
+    constexpr GroupConfig LOW_PRIORITY = {
+        .name = "LP",
+        .frequency = 0.5f, // 0.5 Hz
+        .enabled = true
+    };
+
+    
+
+   
+
+
     constexpr const char* outputHeaderTelemetryFormat =
-        "$LNDAS";
+        "$RVR";
 
     constexpr const char* outputLineEndingTelemetryFormat =
         "*";

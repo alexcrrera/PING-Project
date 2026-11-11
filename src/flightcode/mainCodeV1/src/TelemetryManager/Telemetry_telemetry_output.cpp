@@ -5,6 +5,12 @@
 #include "../Lander/Lander.h"
 #include "../FlightManager/FlightManager.h"
 
+
+
+
+
+
+
 String TelemetryManager::get_telemetry_payload()
 {
     String payload;
@@ -71,15 +77,6 @@ String TelemetryManager::get_telemetry_payload()
     TelemetryUtilities::addTelemetryField(payload, 67.67);
     // 28- 30 Accelereation - X, Y, Z
     TelemetryUtilities::addTelemetryGroup(payload, state.acceleration);
-
-
-
-   
-
-
-
-
-
 
 
 

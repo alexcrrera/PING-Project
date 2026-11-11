@@ -108,7 +108,7 @@ void VN300::process_data()
         case 239: // Yaw / Pitch / Roll, Linear Acceleration in Body Frame, Compensated Angular Rates
         { 
             VN300Parsing::parse_YBA_LinearAccel_Gyro(incomingData, measurement_data);
-            Serial.println("YBA_LinearAccel_Gyro data received");
+          
             break;}
 
         default:
