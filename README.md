@@ -23,7 +23,7 @@ python -m venv .venv
 ```
 
 The dashboard opens at [127.0.0.1:8080](http://127.0.0.1:8080). By default it uses
-a virtual terrain camera and seeded telemetry at 10 Hz. The virtual rover starts
+a virtual terrain camera and USB radio telemetry on the last selected port (COM7 initially). The radio uses 57600 baud by default. Use `--simulation` for seeded virtual telemetry at 10 Hz. The virtual rover starts
 stationary and responds to keyboard or DualShock input. No hardware is
 required. All interface assets are served locally; mobile data or a hotspot is
 not needed once dependencies are installed. Keep the terminal running. Stop

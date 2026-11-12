@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 from PIL import Image
 
-from ping_base.camera import OpenCVCameraSource, SimulatedCameraSource, _LatestFrameSource, _opencv_capture_loop
+from ping_base.camera import FFmpegCameraSource, OpenCVCameraSource, SimulatedCameraSource, _LatestFrameSource, _opencv_capture_loop
 from ping_base.gimbal import GimbalPose, StabilizationMode, VirtualGimbal
 
 
@@ -24,6 +24,24 @@ def wait_until(predicate, timeout=2):
 
 
 class CameraTests(unittest.TestCase):
+    def test_ffmpeg_source_reads_framed_jpeg(self):
+        output = BytesIO()
+        Image.new("RGB", (64, 48), "red").save(output, "JPEG")
+        jpeg = output.getvalue()
+        source = FFmpegCameraSource("tcp://example:8888")
+        source._process = SimpleNamespace(stdout=BytesIO(jpeg + jpeg))
+        first = source._capture_frame(0)
+        second = source._capture_frame(0)
+        self.assertEqual(first[:3], (jpeg, 64, 48))
+        self.assertEqual(second[:3], (jpeg, 64, 48))
+
+    def test_network_source_uses_newest_queued_frame(self):
+        source = OpenCVCameraSource("tcp://example:8888")
+        source._messages = queue.Queue()
+        source._messages.put(("frame", b"old", 1, 1, 1.0))
+        source._messages.put(("frame", b"new", 2, 2, 2.0))
+        self.assertEqual(source._capture_frame(3.0), (b"new", 2, 2, 2.0))
+
     def test_network_capture_drains_frames_without_sleeping_at_display_rate(self):
         capture = Mock()
         capture.read.return_value = (True, SimpleNamespace(shape=(720, 1280, 3)))
@@ -45,7 +63,7 @@ class CameraTests(unittest.TestCase):
         self.assertEqual(cv.imencode.call_count, 2)
         stop.wait.assert_not_called()
         capture.release.assert_called_once()
-        cv.VideoCapture.assert_called_once_with("tcp://192.168.68.56:8888", 1900, [53, 5000, 54, 3000])
+        cv.VideoCapture.assert_called_once_with("tcp://192.168.68.56:8888", 1900, [53, 20000, 54, 3000])
         self.assertEqual(messages.get_nowait()[2:4], (1280, 720))
 
     @staticmethod

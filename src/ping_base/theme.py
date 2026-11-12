@@ -104,7 +104,7 @@ button:focus-visible, a:focus-visible { outline:1px solid var(--accent)!importan
 .head-actions .q-btn { min-height:28px; padding:3px 7px; color:var(--muted); }
 .small-meta { color:var(--muted); font-size:10px; letter-spacing:.07em; font-weight:500; }
 .camera-stage { height:clamp(290px,42vh,600px); min-height:290px; position:relative; overflow:hidden; background:#171916; container-type:inline-size; }
-.camera-image { width:100%; height:100%; object-fit:cover; display:block; }
+.camera-image { width:100%; height:100%; object-fit:contain; display:block; }
 .camera-vignette { position:absolute; inset:0; pointer-events:none; box-shadow:inset 0 0 120px #0005; background:linear-gradient(0deg,#000a,transparent 26%,transparent 80%,#0005); }
 .camera-top { position:absolute; top:16px; left:18px; right:18px; display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
 .camera-label { font-size:9px; letter-spacing:.1em; font-weight:500; display:flex; gap:7px; align-items:center; padding:5px 7px; color:#f0f3e3; background:#10170dcf; border:1px solid #c2c9a44d; text-shadow:0 1px 2px #000; white-space:nowrap; }
@@ -153,7 +153,7 @@ button:focus-visible, a:focus-visible { outline:1px solid var(--accent)!importan
 .camera-readings { display:flex; gap:30px; }
 .overlay-value { font-size:19px; margin-top:3px; font-weight:500; color:#f3f6e6; line-height:1.15; text-shadow:0 1px 3px #000; font-variant-numeric:tabular-nums; }
 .overlay-value small { font-size:11px; margin-left:4px; color:#c0c2b6; }
-.camera-footer { height:24px; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 14px; font-size:9px; letter-spacing:.05em; color:var(--muted); }
+.camera-footer { display:none!important; height:24px; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 14px; font-size:9px; letter-spacing:.05em; color:var(--muted); }
 .camera-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:#171916ee; color:var(--muted); font-size:13px; text-align:center; padding:25px; }
 .camera-stage:fullscreen { height:100vh; width:100vw; }
 .camera-stage:fullscreen .camera-image { object-fit:contain; }
@@ -224,14 +224,15 @@ button:focus-visible, a:focus-visible { outline:1px solid var(--accent)!importan
     .brand .eyebrow { font-size:9px; line-height:1.4; }
     .shell { flex:1; height:calc(100dvh - 46px); min-height:0; }
     .rail { min-height:0; }
-    .workspace { min-height:0; display:grid; grid-template-rows:42px minmax(0,1fr) 15px; row-gap:10px; }
+    .workspace { min-height:0; display:grid; grid-template-rows:minmax(0,1fr) 15px; row-gap:10px; }
     .intro { margin:0; min-height:0; }
     .intro p { margin-top:3px; }
     .intro-right { gap:10px; }
     .intro-right .q-btn { font-size:10px; }
     .layout { min-height:0; height:100%; align-items:stretch; }
-    .visuals { min-height:0; height:100%; display:grid; grid-template-rows:minmax(0,2.15fr) minmax(0,1fr); }
+    .visuals { min-height:0; height:100%; display:grid; grid-template-rows:minmax(0,3.75fr) minmax(0,1fr); }
     .visuals>.panel { min-height:0; display:grid; grid-template-rows:34px minmax(0,1fr) 24px; }
+    .visuals>#vision { grid-template-rows:34px minmax(0,1fr); }
     .panel-head { min-height:0; }
     .camera-stage { height:100%; min-height:0; }
     .camera-footer { height:auto; }
@@ -282,11 +283,12 @@ button:focus-visible, a:focus-visible { outline:1px solid var(--accent)!importan
 }
 @media(min-width:1700px) { .layout { --side-width:310px; } .workspace { padding-left:28px; padding-right:28px; } }
 @media(min-width:1101px) and (max-height:850px) and (min-height:660px) {
-    .workspace { padding-top:10px; padding-bottom:8px; grid-template-rows:38px minmax(0,1fr) 14px; row-gap:8px; }
+    .workspace { padding-top:10px; padding-bottom:8px; grid-template-rows:minmax(0,1fr) 14px; row-gap:8px; }
     .intro h1 { font-size:21px; }
     .intro p { font-size:10px; }
-    .visuals { gap:10px; grid-template-rows:minmax(0,2.3fr) minmax(0,1fr); }
+    .visuals { gap:10px; grid-template-rows:minmax(0,3.75fr) minmax(0,1fr); }
     .visuals>.panel { grid-template-rows:30px minmax(0,1fr) 22px; }
+    .visuals>#vision { grid-template-rows:30px minmax(0,1fr); }
     .panel-head { padding:0 12px; }
     .panel-title { font-size:10px; }
     .head-actions .q-btn { min-height:24px; padding:2px 5px; }

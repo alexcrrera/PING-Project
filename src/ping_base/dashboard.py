@@ -14,12 +14,13 @@ from fastapi import Query, Response
 from nicegui import app, context, ui
 
 from .fonts import register_fonts
-from .camera import OpenCVCameraSource, SimulatedCameraSource
+from .camera import FFmpegCameraSource, OpenCVCameraSource, SimulatedCameraSource
 from .camera_filters import CameraFilterSettings, CameraFrameProcessor, FILTER_LABELS, VISION_EFFECTS
 from .gimbal import GimbalPose, StabilizationMode
-from .hud import TACTICAL_RETICLE, gimbal_indicator, heading_tape, range_readout
+from .hud import gimbal_indicator, heading_tape, range_readout
 from .keyboard import KEYBOARD_SCRIPT
 from .navigation import MAP_ZOOM_LEVELS, campus_map, simulated_position
+from .preferences import loadPort, savePort
 from .orientation import heading_indicator, pitch_indicator, roll_indicator, wheel_slip_indicator
 from .rover import RoverView
 from .station import BaseStation
@@ -182,7 +183,6 @@ class Dashboard:
         self.values = {}
         self._last_camera = -1
         self._last_history_count = -1
-        self.reticle_visible = True
         self.cameraRotation = 0
         self._resetting_filters = False
         self._last_horizon: tuple[float, float] | None = None
@@ -242,7 +242,12 @@ class Dashboard:
                 ui.html("GROUND SYSTEMS<br>ROVER / 01", sanitize=False).classes("eyebrow")
             with ui.element("div").classes("top-meta"):
                 self._label("session", "", "session")
-                self._label("mode", "VIRTUAL TELEMETRY", "status-chip")
+                self._label("mode", "VIRTUAL TELEMETRY", "status-chip").classes("hidden")
+                self._label("rate", "VIRTUAL / 10 HZ", "small-meta")
+                ui.link("Telemetry", "#telemetry").classes("telemetry-mobile-link telemetry-open")
+                ui.link("Operations", "#vision").classes("telemetry-mobile-link telemetry-back")
+                self.pause_button = ui.button("Pause simulation", icon="pause", on_click=self.toggle_pause).props("flat dense")
+                ui.button("Connections", icon="tune", on_click=self.open_settings).props("outline dense")
         with ui.element("div").classes("shell"):
             with ui.element("nav").classes("rail").props('aria-label="Dashboard sections"'):
                 for name, target in (("camera", "vision"), ("rover", "attitude"), ("telemetry", "telemetry")):
@@ -251,15 +256,6 @@ class Dashboard:
                     ui.tooltip(target.title())
                 ui.button(icon="tune", on_click=self.open_settings).props('flat round aria-label="Connection settings"').classes("rail-settings").tooltip("Connections")
             with ui.element("main").classes("workspace"):
-                with ui.element("div").classes("intro"):
-                    with ui.element("div"):
-                        ui.html("<h1>Rover operations</h1><p>Traction, stability &amp; terrain observation.</p>", sanitize=False)
-                    with ui.element("div").classes("intro-right"):
-                        self._label("rate", "VIRTUAL / 10 HZ", "small-meta")
-                        ui.link("Telemetry", "#telemetry").classes("telemetry-mobile-link telemetry-open")
-                        ui.link("Operations", "#vision").classes("telemetry-mobile-link telemetry-back")
-                        self.pause_button = ui.button("Pause simulation", icon="pause", on_click=self.toggle_pause).props("flat dense")
-                        ui.button("Connections", icon="tune", on_click=self.open_settings).props("outline dense")
                 with ui.element("div").classes("layout"):
                     self._tools_sidebar()
                     with ui.element("div").classes("visuals"):
@@ -280,7 +276,6 @@ class Dashboard:
                 with ui.element("div").classes("head-actions"):
                     self._label("camera_resolution", "960 × 540", "small-meta")
                     self.rotation_button = ui.button("0°", icon="rotate_right", on_click=self.rotate_camera).props('flat dense no-caps aria-label="Rotate camera image clockwise"').tooltip("Rotate camera image 90°")
-                    self.reticle_button = ui.button(icon="my_location", on_click=self.toggle_reticle).props('flat dense aria-label="Toggle crosshair"').tooltip("Crosshair")
                     ui.button(icon="fullscreen").props('flat dense aria-label="Expand camera"').on("click", js_handler="() => { const el = document.getElementById('camera-stage'); if(document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen(); }").tooltip("Fullscreen")
             with ui.element("div").classes("camera-stage").props('id="camera-stage"'):
                 self.camera_image = ui.element("img").classes("camera-image").props('alt="Rover front camera"')
@@ -295,7 +290,6 @@ class Dashboard:
                 self.compass = ui.html(heading_tape(None), sanitize=False).classes("camera-compass")
                 self.horizon = ui.html("", sanitize=False).classes("artificial-horizon")
                 self.horizon.set_visibility(False)
-                self.crosshair = ui.html(TACTICAL_RETICLE, sanitize=False).classes("crosshair")
                 with ui.element("div").classes("rangefinder-overlay").props('role="status" aria-label="Camera center rangefinder"'):
                     ui.label("RANGE:").classes("rangefinder-label")
                     self._label("overlay_range", "---- m", "rangefinder-value")
@@ -640,7 +634,7 @@ class Dashboard:
             ui.html("<h2>Telemetry source</h2>", sanitize=False)
             ui.label("Radio bench runs the virtual terrain and sends TEST, DRIVE, STATE and WHEELS lines through one USB radio. Open the other radio in your serial app.").classes("dialog-note")
             self.source_select = ui.select({"simulation": "Virtual robot", "serial": "USB / serial telemetry and gimbal", "radio_bench": "Radio bench · send and receive"}, value="simulation", label="Source").props("outlined dense")
-            self.port_input = ui.input("Serial port", placeholder="COM3 or /dev/ttyUSB0").props("outlined dense")
+            self.port_input = ui.input("Serial port", value=loadPort(), placeholder="COM7 or /dev/ttyUSB0").props("outlined dense")
             self.baud_input = ui.number("Baud rate", value=57600, min=1, precision=0).props("outlined dense")
             self.port_hint = ui.label("").classes("dialog-note")
             ui.button("Scan USB ports", icon="refresh", on_click=self.scan_ports).props("flat dense")
@@ -680,7 +674,7 @@ class Dashboard:
             if not address.startswith(("tcp://", "rtsp://", "http://", "https://", "udp://")):
                 ui.notify("Enter a stream address such as tcp://192.168.137.22:8888")
                 return
-            camera = OpenCVCameraSource(address, fps=20)
+            camera = FFmpegCameraSource(address, fps=20)
         elif kind == "usb":
             index = self.camera_index.value
             if index is None or not math.isfinite(index) or index < 0 or index != int(index):
@@ -706,6 +700,11 @@ class Dashboard:
         else:
             source = SimulatedTelemetrySource()
         self.station.replace_telemetry(source)
+        if self.source_select.value in ("serial", "radio_bench"):
+            try:
+                savePort(port)
+            except OSError:
+                ui.notify("Could not save the serial port for next time.")
         self._last_history_count = -1
         self.dialog.close()
         self.refresh()
@@ -738,10 +737,6 @@ class Dashboard:
     def toggle_brake(self) -> None:
         self.station.toggle_brake()
         self.refresh()
-
-    def toggle_reticle(self) -> None:
-        self.reticle_visible = not self.reticle_visible
-        self.crosshair.set_visibility(self.reticle_visible)
 
     def cycle_camera_zoom(self) -> None:
         self._set_camera_zoom_index((self.camera_zoom_index + 1) % len(CAMERA_ZOOM_LEVELS))
@@ -892,7 +887,9 @@ class Dashboard:
         stabilizationAvailable = roverMode is not None if remoteGimbal else self.gimbal_available
         self.input_guard.props(f'data-mode="{self.station.drive.mode}" data-enabled="{str(self.station.drive_input_enabled).lower()}" data-gimbal="{str(self.gimbal_available).lower()}" data-stabilization="{str(stabilizationAvailable).lower()}" data-map-open="{str(self.map_expanded).lower()}"')
         self.gimbal_controls.set_visibility(self.gimbal_available)
-        self.gimbal_view.set_visibility(self.gimbal_available)
+        liveGimbal = (remoteGimbal and sample is not None and
+                      sample.gimbal_pan_deg is not None and sample.gimbal_pitch_deg is not None)
+        self.gimbal_view.set_visibility(self.gimbal_available or liveGimbal)
         self._text("gimbal_hint", "RIGHT STICK / IJKL AIM · R / × HOME" if self.gimbal_available else "FORWARD VIEW")
         gimbal = self.station.gimbal.state
         mode = self.station.gimbal.stabilization_mode if self.gimbal_available else StabilizationMode.OFF
@@ -921,7 +918,10 @@ class Dashboard:
         self._text("stabilization_detail", detail if remoteGimbal else "Available with virtual camera" if not self.gimbal_available else
                    detail + (" · Compensation limit reached" if limited else ""))
         self._text("gimbal_angles", f"PAN {gimbal.yaw_deg:+.0f}° / TILT {gimbal.pitch_deg:+.0f}°")
-        if self.gimbal_available:
+        if liveGimbal:
+            self.gimbal_view.set_content(gimbal_indicator(GimbalPose(yaw_deg=sample.gimbal_pan_deg,
+                                                                    pitch_deg=sample.gimbal_pitch_deg)))
+        elif self.gimbal_available:
             self.gimbal_view.set_content(gimbal_indicator(gimbal))
         if self.drive_toggle.value != self.station.drive.mode:
             self.drive_toggle.set_value(self.station.drive.mode)

@@ -11,10 +11,13 @@ from abc import ABC, abstractmethod
 from collections import OrderedDict
 from dataclasses import dataclass
 from io import BytesIO
+from pathlib import Path
 import math
 import multiprocessing as mp
 import os
 import queue
+import shutil
+import subprocess
 import random
 import threading
 import time
@@ -138,6 +141,8 @@ class _CameraPose:
 class _LatestFrameSource(ABC):
     """One capture producer, any number of cheap latest-frame readers."""
 
+    throttleCapture = True
+
     def __init__(self, *, width: int, height: int, fps: float) -> None:
         if width < 160 or height < 90 or not math.isfinite(fps) or not 0 < fps <= 60:
             raise ValueError("Camera needs width >= 160, height >= 90 and 0 < fps <= 60")
@@ -212,7 +217,8 @@ class _LatestFrameSource(ABC):
                 except Exception as exc:
                     self._fail(exc)
                     break
-                self._stop.wait(max(0.0, period - (time.monotonic() - began)))
+                if self.throttleCapture:
+                    self._stop.wait(max(0.0, period - (time.monotonic() - began)))
         finally:
             self._close()
 
@@ -615,13 +621,13 @@ def _opencv_capture_loop(device: int | str, width: int, height: int, fps: float,
             # This environment belongs to the isolated capture process only.
             os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "fflags;nobuffer|flags;low_delay|probesize;32768|analyzeduration;0"
             capture = cv2.VideoCapture(device, cv2.CAP_FFMPEG, [
-                cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000,
+                cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 20000,
                 cv2.CAP_PROP_READ_TIMEOUT_MSEC, 3000,
             ])
         else:
             capture = cv2.VideoCapture(device)
         if not capture.isOpened():
-            raise RuntimeError("Cannot open network camera. Check the address, close VLC, and restart the Pi stream before reconnecting."
+            raise RuntimeError("Network camera could not be opened or decoded within 20 seconds. Check the address and Pi stream, then retry."
                                if network else f"Cannot open USB camera {device}")
         if not network:
             capture.set(cv2.CAP_PROP_FRAME_WIDTH, width)
@@ -665,7 +671,7 @@ class OpenCVCameraSource(_LatestFrameSource):
     simulated = False
 
     def __init__(self, device: int | str = 0, *, width: int = 960, height: int = 540, fps: float = 12,
-                 timeout: float = 8.0) -> None:
+                 timeout: float = 25.0) -> None:
         super().__init__(width=width, height=height, fps=fps)
         if not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("Camera timeout must be positive")
@@ -697,6 +703,12 @@ class OpenCVCameraSource(_LatestFrameSource):
             if now - self._last_received > self.timeout:
                 raise RuntimeError(f"No camera frame received for {self.timeout:g} seconds")
             return None
+        # Discard queued older frames instead of displaying a backlog.
+        while message[0] != "error":
+            try:
+                message = self._messages.get_nowait()
+            except queue.Empty:
+                break
         if message[0] == "error":
             raise RuntimeError(message[1])
         self._last_received = now
@@ -719,3 +731,85 @@ class OpenCVCameraSource(_LatestFrameSource):
             self._messages.close()
             self._messages = None
 
+
+
+def findFfmpeg() -> str | None:
+    executable = shutil.which("ffmpeg")
+    if executable:
+        return executable
+    localAppData = os.environ.get("LOCALAPPDATA")
+    if localAppData:
+        packages = Path(localAppData) / "Microsoft" / "WinGet" / "Packages"
+        for executablePath in packages.glob("Gyan.FFmpeg*/**/bin/ffmpeg.exe"):
+            return str(executablePath)
+    return None
+
+
+class FFmpegCameraSource(_LatestFrameSource):
+    """Decode network video with FFmpeg and publish the latest JPEG frame."""
+
+    simulated = False
+    throttleCapture = False
+
+    def __init__(self, device: str, *, fps: float = 20) -> None:
+        super().__init__(width=960, height=540, fps=fps)
+        self.device = device
+        self.name = "Network camera"
+        self._process: subprocess.Popen | None = None
+        self._buffer = bytearray()
+
+    def _open(self) -> None:
+        executable = findFfmpeg()
+        if not executable:
+            raise RuntimeError("FFmpeg was not found. Install it with winget install --id Gyan.FFmpeg --exact and restart the GUI.")
+        command = [executable, "-hide_banner", "-loglevel", "error", "-fflags", "nobuffer",
+                   "-flags", "low_delay", "-threads", "1", "-i", self.device, "-an", "-c:v", "mjpeg", "-threads", "1",
+                   "-q:v", "4", "-fps_mode", "passthrough", "-flush_packets", "1",
+                   "-f", "image2pipe", "pipe:1"]
+        self._buffer.clear()
+        self._process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                         stderr=subprocess.DEVNULL, bufsize=0,
+                                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+    def _capture_frame(self, now: float) -> CameraCapture | None:
+        process = self._process
+        if process is None or process.stdout is None:
+            raise RuntimeError("FFmpeg camera process is not running")
+        while not self._stop.is_set():
+            start = self._buffer.find(b"\xff\xd8")
+            end = self._buffer.find(b"\xff\xd9", start + 2) if start >= 0 else -1
+            if end >= 0:
+                jpeg = bytes(self._buffer[start:end + 2])
+                del self._buffer[:end + 2]
+                with Image.open(BytesIO(jpeg)) as image:
+                    width, height = image.size
+                return jpeg, width, height, time.monotonic()
+            if len(self._buffer) > 16 * 1024 * 1024:
+                raise RuntimeError("FFmpeg returned an invalid camera frame")
+            chunk = process.stdout.read(65536)
+            if not chunk:
+                if self._stop.is_set():
+                    return None
+                raise RuntimeError("FFmpeg camera stream ended. Check the Pi stream and retry.")
+            self._buffer.extend(chunk)
+        return None
+
+    def close(self) -> None:
+        self._stop.set()
+        process = self._process
+        if process is not None and process.poll() is None:
+            process.terminate()
+        super().close()
+
+    def _close(self) -> None:
+        process, self._process = self._process, None
+        if process is not None:
+            if process.poll() is None:
+                process.terminate()
+            try:
+                process.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=1)
+            if process.stdout is not None:
+                process.stdout.close()

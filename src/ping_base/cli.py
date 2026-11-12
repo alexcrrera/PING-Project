@@ -11,6 +11,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--host", default="127.0.0.1", help="listen address, default local computer only")
     result.add_argument("--port", type=int, default=8080, help="dashboard port (default 8080)")
     result.add_argument("--no-browser", action="store_true", help="do not open the dashboard automatically")
+    result.add_argument("--simulation", action="store_true", help="start with simulated telemetry")
     result.add_argument("--serial-port", help="receive real USB telemetry instead of simulation, e.g. COM3")
     result.add_argument("--baud", type=int, default=57600, help="USB telemetry baud rate (default 57600)")
     result.add_argument("--camera", help="OpenCV camera index or stream URL; default virtual terrain camera")
@@ -47,10 +48,11 @@ def main(argv: list[str] | None = None) -> int:
     from nicegui import ui
     from .camera import OpenCVCameraSource, SimulatedCameraSource
     from .dashboard import PING_ICON_PATH, configure_dashboard
+    from .preferences import loadPort
     from .station import BaseStation, PS4ControllerService
     from .telemetry import SerialTelemetrySource, SimulatedTelemetrySource, TelemetryManager
 
-    source = SerialTelemetrySource(args.serial_port, baudrate=args.baud) if args.serial_port else SimulatedTelemetrySource(seed=args.seed)
+    source = SimulatedTelemetrySource(seed=args.seed) if args.simulation and not args.serial_port else SerialTelemetrySource(args.serial_port or loadPort(), baudrate=args.baud)
     camera_device = int(args.camera) if args.camera and args.camera.isdecimal() else args.camera
     camera = OpenCVCameraSource(camera_device) if args.camera is not None else SimulatedCameraSource()
     controller = PS4ControllerService(args.device_index, args.deadzone) if args.controller else None

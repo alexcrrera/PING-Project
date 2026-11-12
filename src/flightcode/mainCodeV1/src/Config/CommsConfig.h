@@ -49,7 +49,7 @@ namespace CommsConfig {
 
     constexpr SerialPortConfig CONTROLLER = {
         .port = &Serial4,
-        .baudrate = 115200,
+        .baudrate = 57600,
         .name = "CONTROLLER COMMS",
         .input_enabled = true,
         .output_enabled = true,

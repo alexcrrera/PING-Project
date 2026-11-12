@@ -101,10 +101,11 @@ void StateEstimator::estimateAcceleration_BODY(LanderState& state, const SensorM
 
 void StateEstimator::estimateVelocity_BODY(LanderState& state, const SensorMeasurements& sensorMeasurements)
 {
+   // use optical flow data to estimate velocity in body frame, its labeled NORTH and EAST but it is actually BODY X and Y
+
    
-    state.velocity.X_SI = 0.5f; // Placeholder for actual velocity estimation logic
-    state.velocity.Y_SI = 0.1f; // Placeholder for actual velocity estimation logic
-    state.velocity.Z_SI = 12.58;
+   state.velocity.X_SI = sensorMeasurements.opticalFlow_data.velocity_North_SI; // Forward velocity
+    state.velocity.Y_SI = sensorMeasurements.opticalFlow_data.velocity_East_SI; // Right velocity
     state.validity.velocityValid = true; // Assuming velocity is valid if VN300 data is available
 }
 
