@@ -10,12 +10,20 @@ struct GroupConfig {
 
 namespace CommsConfig {
 
+    inline constexpr GroupConfig RGM = {
+        .name = "RGM",
+        .frequency = 0.5f,
+        .enabled_for_USB = true,
+        .enabled_for_RADIO = true,
+        .enabled_for_CONTROLLER = false
+    };
+
     inline constexpr GroupConfig ATVL = {
         .name = "ATVL",
         .frequency = 20.0f,
         .enabled_for_USB = false,
         .enabled_for_RADIO = true,
-        .enabled_for_CONTROLLER = false
+        .enabled_for_CONTROLLER = true
     };
 
     inline constexpr GroupConfig WSST = {
@@ -54,7 +62,7 @@ namespace CommsConfig {
         .name = "WGD",
         .frequency = 0.5f,
         .enabled_for_USB = false,
-        .enabled_for_RADIO = false,
+        .enabled_for_RADIO = true,
         .enabled_for_CONTROLLER = false
     };
 

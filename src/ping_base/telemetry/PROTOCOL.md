@@ -113,3 +113,9 @@ disconnect. It also exposes `rejected_count`. To change adapters at runtime use
 `manager.replace_source(new_source)`, which closes the old source and clears its
 state/history. The simulator has a `paused` boolean to demonstrate freshness
 loss and recovery without unplugging hardware.
+
+## RGM regime group
+
+The Teensy sends `$RVR,RGM,<state>,<dynamic>,<max_velocity>,<max_acceleration>,<max_yaw_rate>,<max_yaw_acceleration>,<pitch_roll_limit>,<yaw_limit>,<min_output>,<max_output>*\n` every 2 seconds. State is text; dynamic is 0 or 1. Units are m/s, m/s², degrees/s, degrees/s², degrees, degrees, percent and percent, respectively. The limits are obtained from the state machine's current regime. RGM is enabled for radio and USB. In USB base-station format it is emitted as a separate group frame. The GUI expires regime fields after 6 seconds without a new RGM frame while other frames continue.
+
+The target-speed gauge shows the local drive request. Its m/s readout is an estimate computed as throttle multiplied by the latest maximum velocity, with zero when braking; it is not a rover-reported target.

@@ -7,7 +7,7 @@ from .model import RoverTelemetrySample, validate_sample
 
 GROUP_EXPIRY = {
     "P2": 1.0, "P3": 1.5, "F": 2.5, "LP": 5.0, "P1": 1.5,
-    "WGD": 5.0, "WSST": 1.0, "ACCL": 1.0, "GPD": 2.5, "GMBL": 5.0, "ATVL": 1.5,
+    "RGM": 6.0, "WGD": 5.0, "WSST": 1.0, "ACCL": 1.0, "GPD": 2.5, "GMBL": 5.0, "ATVL": 1.5,
 }
 BRAKE_FLAGS = {"[OK]": True, "[X]": False, "1": True, "0": False}
 
@@ -22,6 +22,18 @@ def _numbers(fields: tuple[str, ...], count: int) -> tuple[float, ...]:
 
 
 def _decode_fields(group: str, fields: tuple[str, ...]) -> dict:
+    if group == "RGM":
+        if len(fields) != 10 or not fields[0] or len(fields[0]) > 32:
+            raise ValueError("Expected regime name and nine fields")
+        dynamic, velocity, acceleration, yawRate, yawAcceleration, tilt, yaw, minOutput, maxOutput = _numbers(fields[1:], 9)
+        if dynamic not in (0, 1) or min(velocity, acceleration, yawRate, yawAcceleration, tilt, yaw) < 0 or not 0 <= minOutput <= maxOutput <= 100:
+            raise ValueError("Invalid regime limits")
+        return {"regime_mode": fields[0], "regime_dynamic": bool(dynamic),
+                "regime_max_velocity_mps": velocity, "regime_max_acceleration_mps2": acceleration,
+                "regime_max_yaw_rate_dps": yawRate, "regime_max_yaw_acceleration_dps2": yawAcceleration,
+                "regime_pitch_roll_limit_deg": tilt, "regime_yaw_limit_deg": yaw,
+                "regime_min_output_percent": minOutput, "regime_max_output_percent": maxOutput}
+
     if group == "ATVL":
         vx, vy, yaw, pitch, roll = _numbers(fields, 5)
         return {"velocity_body_mps": (vx, vy), "speed_mps": hypot(vx, vy),

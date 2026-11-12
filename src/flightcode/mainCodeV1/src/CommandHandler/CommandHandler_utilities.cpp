@@ -74,6 +74,29 @@
         return;
     }
 
+    if (header == "NAV_MODE")
+    {
+        auto& stateMachine = flight_manager->getStateMachine();
+        const auto current = stateMachine.getState();
+        if (payload.length() != 1 || payload[0] < '0' || payload[0] > '2')
+        {
+            setErrorFeedback("Invalid navigation mode");
+            return;
+        }
+        if (current != STATE_MACHINE_STATES::AWAIT && !stateMachine.isDynamic(current))
+        {
+            setErrorFeedback("Navigation mode unavailable");
+            return;
+        }
+        constexpr STATE_MACHINE_STATES modes[] = {
+            STATE_MACHINE_STATES::NAVIGATION_TRACTION,
+            STATE_MACHINE_STATES::NAVIGATION_NO_TRACTION,
+            STATE_MACHINE_STATES::NAVIGATION_OBSTACLE
+        };
+        stateMachine.requestStateChange(modes[payload[0] - '0']);
+        return;
+    }
+
     if (header == "GIMBAL_MODE")
     {
         if (payload.length() != 1 || payload[0] < '0' || payload[0] > '2' ||

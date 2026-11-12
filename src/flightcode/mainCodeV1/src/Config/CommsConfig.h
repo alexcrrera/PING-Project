@@ -43,7 +43,7 @@ namespace CommsConfig {
         .periodic_output_enabled = true,
         .frequency = 10.0f, // 10 Hz
         .outputType = SerialOutputType::GROUP_FORMAT,
-        .bufferSize = 30 // buffer size for incoming data
+        .bufferSize = 100 // buffer size for incoming data
     };
 
 
@@ -68,7 +68,7 @@ namespace CommsConfig {
         .periodic_output_enabled = true,
         .frequency = 10.0f, // 2 Hz
         .outputType = SerialOutputType::BASE_STATION_FORMAT,
-        .bufferSize = 30 // buffer size for incoming data
+        .bufferSize = 100 // buffer size for incoming data
        
     };
 

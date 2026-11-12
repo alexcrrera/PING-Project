@@ -66,10 +66,18 @@ def _front_rover() -> str:
             '</g>')
 
 
-def _attitude_indicator(value: float | None, name: str, silhouette: str) -> str:
+def _attitude_indicator(value: float | None, name: str, silhouette: str, limit: float | None = None) -> str:
     value = _number(value)
     label = f'{name} {value:+.1f} degrees' if value is not None else f'{name} unavailable'
     scale = _attitude_scale()
+    limit = _number(limit)
+    if limit is not None and 0 < limit <= 90:
+        marks = []
+        for angle in (-limit, limit):
+            # Limit markers rotate about the rover pivot along the horizontal datum.
+            marks.append(f'<g transform="rotate({angle:.2f} 60 54)"><path d="M101 49V59" stroke="#f17168" stroke-width="2"/></g>')
+        scale += '<g data-role="tilt-limits">' + ''.join(marks) + '</g>'
+        label += f', limit plus or minus {limit:.1f} degrees'
     if value is None:
         content = f'<g opacity=".28">{scale}{silhouette}</g>'
         content += f'<path d="M49 104H71" stroke="{_MUTED}" stroke-width="2"/>'
@@ -78,14 +86,14 @@ def _attitude_indicator(value: float | None, name: str, silhouette: str) -> str:
     return _svg(label, content)
 
 
-def pitch_indicator(pitch: float | None) -> str:
+def pitch_indicator(pitch: float | None, limit: float | None = None) -> str:
     """Side view, nose pointing right; positive pitch raises the nose."""
-    return _attitude_indicator(pitch, 'Pitch', _side_rover())
+    return _attitude_indicator(pitch, 'Pitch', _side_rover(), limit)
 
 
-def roll_indicator(roll: float | None) -> str:
+def roll_indicator(roll: float | None, limit: float | None = None) -> str:
     """Front view; positive right-side-down roll lowers the image's left side."""
-    return _attitude_indicator(roll, 'Roll', _front_rover())
+    return _attitude_indicator(roll, 'Roll', _front_rover(), limit)
 
 
 def _top_rover() -> str:
@@ -101,7 +109,8 @@ def _top_rover() -> str:
 
 
 def wheel_slip_indicator(slips: tuple[float, float, float, float] | None, red_at: int,
-                         thrust: tuple[float, float] | None = None) -> str:
+                         thrust: tuple[float, float] | None = None, *,
+                         rpm: tuple[float, float, float, float] | None = None) -> str:
     """Body-relative view for fixed wheels, with red at or above the slip threshold."""
     wheels = []
     readings = []
@@ -114,6 +123,8 @@ def wheel_slip_indicator(slips: tuple[float, float, float, float] | None, red_at
             severity = min(1.0, slip * 100 / red_at) if red_at else float(slip > 0)
             color = f'hsl({120 * (1 - severity):.1f}, 75%, 66%)'
             reading = description = f'{slip:.0%}'
+        if rpm is not None:
+            description += f', {rpm[index]:.0f} RPM'
         descriptions.append(f'{name} {description}')
         side = index % 2
         center_y = 50 + 24 * (index // 2)
@@ -122,17 +133,22 @@ def wheel_slip_indicator(slips: tuple[float, float, float, float] | None, red_at
                       f'fill="{color}" fill-opacity=".16" stroke="{color}" stroke-width=".75"/>')
         readings.append(f'<text x="{slip_x}" y="{center_y + 1.5}" '
                         f'font-size="4.4" text-anchor="middle">{reading}</text>')
-        value = (f'{thrust[side]:+.0%}' if thrust[side] else '0%') if thrust is not None else '—'
+        if rpm is not None:
+            value = f'{rpm[index]:.0f}'
+        elif thrust is not None:
+            value = f'{thrust[side]:+.0%}' if thrust[side] else '0%'
+        else:
+            value = '-'
         x, anchor = ((31, 'end'), (89, 'start'))[side]
         readings.append(f'<text x="{x}" y="{center_y + 1.8}" fill="#bdc3b7" text-anchor="{anchor}">{value}</text>')
-    thrust_label = 'Thrust unavailable.' if thrust is None else f'Left thrust {thrust[0]:+.0%}, right thrust {thrust[1]:+.0%}.'
+    thrust_label = f' Left thrust {thrust[0]:+.0%}, right thrust {thrust[1]:+.0%}.' if thrust is not None and rpm is None else ''
     chassis = ('<g stroke="#8e998b" stroke-width=".8" stroke-linejoin="round">'
                '<path d="M47 50H73M47 74H73" stroke="#616b60"/>'
                '<path d="M50 43L54 38H66L70 43V80L66 84H54L50 80Z" fill="#202620"/>'
                '<path d="M54 47H66V77H54Z" stroke="#566155"/>'
                '<path d="M57 45L60 42L63 45"/>'
                '<circle cx="60" cy="60" r="3.5"/></g>')
-    return _svg(f'Wheel slip, front up. {". ".join(descriptions)}. Red threshold {red_at}%. {thrust_label}',
+    return _svg(f'Wheel slip, front up. {". ".join(descriptions)}. Red threshold {red_at}%.{thrust_label}',
                 chassis + ''.join(wheels) +
                 f'<g fill="{_WHITE}" font-family="Arial,sans-serif" font-size="6">{"".join(readings)}</g>',
                 view_box="4 34 112 52")

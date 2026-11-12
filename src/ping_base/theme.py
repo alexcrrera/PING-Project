@@ -157,16 +157,23 @@ button:focus-visible, a:focus-visible { outline:1px solid var(--accent)!importan
 .camera-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:#171916ee; color:var(--muted); font-size:13px; text-align:center; padding:25px; }
 .camera-stage:fullscreen { height:100vh; width:100vw; }
 .camera-stage:fullscreen .camera-image { object-fit:contain; }
-.pose-body { --pose-view-size:240px; display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1.1fr); align-items:center; }
-.rover-scene { width:100%!important; height:var(--pose-view-size, 240px)!important; }
-.orientation-dials { align-self:stretch; border-left:1px solid var(--line); min-width:0; min-height:0; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); grid-template-rows:minmax(0,1fr) auto; gap:5px 8px; padding:12px; align-content:center; }
+.pose-body { --pose-view-size:240px; display:grid; grid-template-columns:minmax(0,1fr) repeat(2,minmax(0,1fr)) minmax(0,1.3fr); grid-template-areas:"rover wheels target attitude"; align-items:stretch; }
+.rover-scene { grid-area:rover; width:100%!important; height:var(--pose-view-size, 240px)!important; }
+.orientation-dials { grid-area:attitude; align-self:stretch; border-left:1px solid var(--line); min-width:0; min-height:0; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); grid-template-rows:minmax(0,1fr) auto; gap:5px 8px; padding:12px; align-content:center; }
 .orientation-dial { min-width:0; min-height:0; display:flex; flex-direction:column; align-items:center; text-align:center; }
 .orientation-dial>.eyebrow { font-size:9px; letter-spacing:.12em; }
 .orientation-svg { width:100%; max-width:120px; flex:1; min-height:0; max-height:132px; display:flex; align-items:center; }
 .orientation-svg svg { display:block; width:100%; height:100%; }
-.wheel-slip-panel { box-sizing:border-box; justify-self:center; width:var(--pose-view-size); height:var(--pose-view-size); padding:8px; border:1px solid var(--line); background:#191a18; }
+.wheel-slip-panel { grid-area:wheels; box-sizing:border-box; width:100%; min-height:0; padding:8px; border-left:1px solid var(--line); background:#191a18; }
 .wheel-slip-panel .orientation-svg { flex:1; max-width:none; max-height:none; }
 .wheel-slip-panel .q-slider { width:85%; max-width:180px; }
+.target-panel { grid-area:target; gap:2px; }
+.target-svg { width:100%; flex:1 1 0; min-height:0; display:grid; place-items:center; }
+.target-svg svg { display:block; width:100%; height:100%; min-height:0; }
+.target-unavailable { color:var(--dim); padding:22px 0; font-size:9px; }
+.regime-name { color:var(--accent); font-size:10px; font-weight:600; max-width:100%; }
+.regime-name .q-btn__content { white-space:normal; line-height:1.15; }
+.regime-limits { color:var(--muted); font-size:8px; line-height:1.2; text-align:center; }
 .orientation-value { font-size:16px; line-height:1.25; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .orientation-caption, .orientation-camera { font-size:8px; letter-spacing:.04em; line-height:1.5; white-space:nowrap; }
 .orientation-caption { color:var(--dim); }
@@ -228,7 +235,8 @@ button:focus-visible, a:focus-visible { outline:1px solid var(--accent)!importan
     .panel-head { min-height:0; }
     .camera-stage { height:100%; min-height:0; }
     .camera-footer { height:auto; }
-    .pose-body { min-height:0; container-type:size; --pose-view-size:min(100cqh, 42cqw); }
+    .pose-body { min-height:0; }
+    .pose-body .rover-scene { height:100%!important; }
     .rover-scene { min-height:0!important; }
     .rover-scene canvas { display:block; }
     .orientation-dials { padding:7px 10px; gap:3px 6px; }
@@ -311,8 +319,9 @@ button:focus-visible, a:focus-visible { outline:1px solid var(--accent)!importan
     .control-hint { margin-top:3px; font-size:9px; }
 }
 @media(max-width:1100px) { .layout { grid-template-columns:minmax(0,1fr); grid-template-areas:"visuals" "controls" "telemetry"; gap:12px; } .workspace { padding-left:16px; padding-right:16px; } .shell { grid-template-columns:50px minmax(0,1fr); } .topbar { padding:0 18px; } .intro-right { gap:5px; } .intro-right .small-meta { font-size:9px; } .tools-scroll { overflow:visible; } .tools-sidebar .filter-switch-grid { grid-template-columns:1fr 1fr; } .telemetry { display:grid; grid-template-columns:1fr 1fr; } .telemetry>.panel-head { grid-column:1/-1; } }
+@media(max-width:1000px) { .pose-body { grid-template-columns:repeat(2,minmax(0,1fr)); grid-template-rows:240px 220px; grid-template-areas:"rover attitude" "wheels target"; } .wheel-slip-panel { border-top:1px solid var(--line); } }
 @media(max-width:800px) { .layout { grid-template-columns:1fr; } .telemetry { display:grid; grid-template-columns:1fr 1fr; } .telemetry>.panel-head { grid-column:1/-1; } .telemetry-section { border-right:1px solid var(--line); } .shell { grid-template-columns:1fr; } .rail { display:none; } .topbar { padding:0 18px; height:64px; } .top-meta { gap:12px; } .session { display:none; } .brand { gap:12px; } .brand-word { font-size:21px; } .workspace { padding:22px 16px; } .intro { margin-bottom:20px; } .intro h1 { font-size:25px; } .intro-right .small-meta { display:none; } .camera-stage { height:45vw; min-height:280px; } .footer { flex-wrap:wrap; } }
-@media(max-width:600px) { .pose-body { --pose-view-size:210px; grid-template-columns:minmax(0,1fr); } .orientation-dials { border-left:0; border-top:1px solid var(--line); min-height:172px; padding:10px 14px; } .orientation-svg { height:105px; flex:none; } }
+@media(max-width:600px) { .pose-body { --pose-view-size:210px; grid-template-rows:210px auto 180px; grid-template-areas:"rover rover" "attitude attitude" "wheels target"; } .pose-foot { flex-wrap:wrap; } .orientation-dials { border-left:0; border-top:1px solid var(--line); min-height:172px; padding:10px 14px; } .orientation-svg { height:105px; flex:none; } }
 @media(max-width:470px) { .rangefinder-overlay { top:calc(50% + 43px); padding:3px 5px; gap:6px; } .rangefinder-value { font-size:17px; } }
 @media(max-width:470px) { .telemetry { display:block; } .camera-readings { gap:17px; } .camera-top { left:10px; right:10px; gap:6px; } .camera-label { padding:4px 5px; font-size:8px; letter-spacing:.06em; gap:5px; } .camera-indicators { padding:2px 3px; } .camera-compass { width:250px; top:48px; height:50px; } .camera-stamp { display:none; } .gimbal-tools { top:104px; right:10px; } .camera-bottom { left:10px; right:10px; bottom:10px; gap:6px; } .camera-telemetry { padding:6px; gap:5px; } .camera-gps { font-size:8px; letter-spacing:0; } .camera-bottom .eyebrow { font-size:7px; } .camera-bottom>.eyebrow { padding:3px; font-size:7px; } .overlay-value { font-size:16px; } .crosshair { width:96px; height:72px; } .map-overlay { padding:8px; } .map-expanded-card { width:96vw; padding:10px; max-height:calc(100dvh - 16px); } .map-expanded-head { gap:6px; } .map-expanded-head .eyebrow { font-size:9px; } .map-large-viewport { width:min(88vw,calc(100dvh - 190px),720px); } .map-expanded-footer { font-size:9px; gap:5px; } .brand .eyebrow { font-size:8px; } .top-meta { gap:4px; } .status-chip { font-size:8px; } }
 """

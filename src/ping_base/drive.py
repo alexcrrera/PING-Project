@@ -65,11 +65,14 @@ class DriveInputRouter:
                                       max(-1.0, min(1.0, steering)), brake)
         return True
 
-    def command(self, controller: ControllerState, *, now: float | None = None) -> DriveCommand:
+    def command(self, controller: ControllerState, *, now: float | None = None,
+                reverseTrigger: bool = False) -> DriveCommand:
         now = self._clock() if now is None else now
         if self.mode == "dualshock":
             if not controller.connected:
                 return DriveCommand(source="dualshock")
+            if reverseTrigger:
+                return DriveCommand(controller.r2 - controller.l2, controller.left_stick.x, False, "dualshock")
             return DriveCommand(controller.r2, controller.left_stick.x,
                                 controller.l2 > .1,
                                 "dualshock")

@@ -138,6 +138,15 @@ class BaseStation:
     def drive_input_enabled(self) -> bool:
         return self.virtual_driving or type(getattr(self.telemetry, "source", None)) is SerialTelemetrySource
 
+    @property
+    def reverse_trigger_enabled(self) -> bool:
+        source = self.telemetry.source
+        if isinstance(source, SimulatedTelemetrySource):
+            return True
+        sample = self.telemetry.state.sample
+        return (type(source) is SerialTelemetrySource and source.transport_connected
+                and getattr(sample, "regime_mode", None) == "NAVIGATION_TRACTION")
+
     def set_drive_mode(self, mode: str) -> None:
         self.stop_drive()
         self.gimbal.release("dualshock")
@@ -263,7 +272,7 @@ class BaseStation:
                             self.gimbal.reset()
             self._bind_simulation()
             now = time.monotonic()
-            self.drive_command = (self.drive.command(control, now=now)
+            self.drive_command = (self.drive.command(control, now=now, reverseTrigger=self.reverse_trigger_enabled)
                                   if self.drive_input_enabled and not self.brake_latched
                                   else DriveCommand(source=self.drive.mode))
             if self.virtual_driving:

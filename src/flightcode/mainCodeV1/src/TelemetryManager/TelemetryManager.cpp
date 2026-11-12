@@ -86,7 +86,8 @@ TelemetryManager::TelemetryManager(
           {ACCL::config, appendACCLFields},
           {GPD::config, appendGPDFields},
           {GMBL::config, appendGMBLFields},
-          {WGD::config, appendWGDFields}
+          {WGD::config, appendWGDFields},
+          {CommsConfig::RGM, nullptr}
       }
 {
 }
@@ -145,7 +146,8 @@ void TelemetryManager::send_group(const GroupEntry* group)
 {
     const auto& config = group->config;
     const bool sendUSB = config.enabled_for_USB &&
-        USB_output_type == SerialOutputType::GROUP_FORMAT &&
+        (USB_output_type == SerialOutputType::GROUP_FORMAT ||
+         (group == &groups[6] && USB_output_type == SerialOutputType::BASE_STATION_FORMAT)) &&
         USB_output_enabled && USB_output_initialized && USB_periodic_output_enabled;
     const bool sendRadio = config.enabled_for_RADIO &&
         RADIO_output_type == SerialOutputType::GROUP_FORMAT &&
@@ -163,7 +165,24 @@ void TelemetryManager::send_group(const GroupEntry* group)
     String payload = CommsConfig::outputHeaderTelemetryFormat;
     payload += ",";
     payload += config.name;
-    group->appendFields(payload, flightManager->getLander().getState());
+    if (group->appendFields)
+    {
+        group->appendFields(payload, flightManager->getLander().getState());
+    }
+    else
+    {
+        const auto regime = flightManager->getStateMachine().getCurrentFlightRegimeData();
+        addTelemetryField(payload, flightManager->getStateMachine().getStateAsString());
+        addTelemetryField(payload, static_cast<int>(regime.isDynamic));
+        addTelemetryField(payload, regime.max_horizontal_velocity_ms, 2);
+        addTelemetryField(payload, regime.max_horizontal_acceleration_ms2, 2);
+        addTelemetryField(payload, regime.max_yaw_velocity_degs, 2);
+        addTelemetryField(payload, regime.max_yaw_acceleration_degs2, 2);
+        addTelemetryField(payload, regime.pitch_roll_abort_angle_deg, 2);
+        addTelemetryField(payload, regime.yaw_abort_angle_deg, 2);
+        addTelemetryField(payload, regime.min_thrust_percentage, 1);
+        addTelemetryField(payload, regime.max_thrust_percentage, 1);
+    }
     payload += CommsConfig::outputLineEndingTelemetryFormat;
 
     if (sendUSB)

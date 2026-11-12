@@ -47,11 +47,21 @@ STABILIZATION_LABELS = {
 }
 STABILIZATION_HINT = "Z: Follow Both / Headless / Follow Yaw"
 
+NAVIGATION_MODES = {
+    "NAVIGATION_TRACTION": "TRACTION",
+    "NAVIGATION_NO_TRACTION": "NO TRACTION",
+    "NAVIGATION_OBSTACLE": "OBSTACLE",
+}
+
+
 GROUP_TITLES = {
     "ATVL": "Motion", "WSST": "Wheel speed and slip", "ACCL": "Acceleration",
-    "GPD": "GNSS", "GMBL": "Gimbal", "WGD": "Wheel data",
+    "GPD": "GNSS", "GMBL": "Gimbal", "WGD": "Wheel data", "RGM": "Regime",
 }
 GROUP_FIELDS = {
+    ("RGM", 10): ("Regime", "Dynamic", "Max velocity (m/s)", "Max acceleration (m/s²)",
+                  "Max yaw rate (°/s)", "Max yaw acceleration (°/s²)", "Pitch/roll limit (°)",
+                  "Yaw limit (°)", "Min output (%)", "Max output (%)"),
     ("ATVL", 5): ("Vx (m/s)", "Vy (m/s)", "Yaw (°)", "Pitch (°)", "Roll (°)"),
     ("WSST", 8): tuple(f"{wheel} {channel}" for channel in ("RPM", "slip")
                       for wheel in ("FL", "FR", "RL", "RR")),
@@ -100,6 +110,38 @@ def rover_group_details(sample: RoverTelemetrySample) -> str:
     return "\n".join(lines)
 
 
+def target_speed_indicator(throttle: float | None, max_velocity: float | None,
+                           steering: float = 0.0, max_yaw_rate: float | None = None) -> str:
+    """Draw the local drive request and its regime-scaled estimates."""
+    if throttle is None or not math.isfinite(throttle):
+        return '<div class="target-unavailable">INPUT UNAVAILABLE</div>'
+    throttle = max(-1.0, min(1.0, throttle))
+    steering = max(-1.0, min(1.0, steering))
+    speedColor = "#f17168" if abs(throttle) >= .9 else "#c9db92"
+    turnColor = "#f17168" if abs(steering) >= .9 else "#c9db92"
+    speedY = 51 - throttle * 32
+    turnX = 95 + steering * 34
+    velocity = f"{throttle * max_velocity:+.2f} m/s" if max_velocity is not None else "— m/s"
+    yawRate = f"{steering * max_yaw_rate:+.1f}°/s" if max_yaw_rate is not None else "— °/s"
+    return (
+        f'<svg viewBox="0 0 140 124" role="img" aria-label="Speed request {throttle:+.0%}, estimated {velocity}; '
+        f'turn request {steering:+.0%}, estimated {yawRate}">'
+        '<g font-size="8" fill="#a4a89b">'
+        '<text x="15" y="14">+100%</text><text x="15" y="54">0%</text><text x="15" y="94">−100%</text>'
+        '<text x="95" y="57" text-anchor="middle">TURN REQUEST</text>'
+        '<text x="61" y="89">L</text><text x="129" y="89" text-anchor="end">R</text>'
+        '<text x="70" y="116" text-anchor="middle">ESTIMATED FROM REGIME LIMITS</text></g>'
+        '<path d="M40 19V83 M61 73H129" stroke="#363d33" stroke-width="6" stroke-linecap="round"/>'
+        f'<path d="M40 51V{speedY:.1f}" stroke="{speedColor}" stroke-width="6" stroke-linecap="round"/>'
+        f'<path d="M95 73H{turnX:.1f}" stroke="{turnColor}" stroke-width="6" stroke-linecap="round"/>'
+        '<path d="M35 51H45 M95 68V78" stroke="#e8e7df" stroke-width="1"/>'
+        f'<text x="95" y="22" text-anchor="middle" font-size="14" fill="{speedColor}">{velocity}</text>'
+        f'<text x="95" y="37" text-anchor="middle" font-size="10" fill="{speedColor}">{throttle:+.0%}</text>'
+        f'<text x="95" y="101" text-anchor="middle" font-size="9" fill="{turnColor}">{steering:+.0%} · {yawRate}</text>'
+        '</svg>'
+    )
+
+
 def sparkline(history, fresh: bool) -> str:
     """Only validated numbers enter this SVG; values are historical by design."""
     values = [sample.speed_mps for sample in history if sample.speed_mps is not None][-300:]
@@ -145,6 +187,7 @@ class Dashboard:
         self._resetting_filters = False
         self._last_horizon: tuple[float, float] | None = None
         self._last_orientation: tuple | None = None
+        self._navigation_request: tuple[str, float] | None = None
         self._last_heading: float | None = None
         self._group_fields: dict[str, tuple[str, ...] | None] = {}
         self._log_source: SerialTelemetrySource | None = None
@@ -414,10 +457,16 @@ class Dashboard:
                 self.rover = RoverView(background_color="#191a18", height=240)
                 self.rover.scene.classes("rover-scene")
                 with ui.element("div").classes("orientation-dial wheel-slip-panel").props('role="group" aria-label="Top-down wheel slip"'):
-                    ui.label("WHEEL SLIP / THRUST").classes("eyebrow")
+                    self._label("wheel_panel_title", "WHEEL SLIP / RPM", "eyebrow")
                     self.slip_view = ui.html(wheel_slip_indicator(None, 30), sanitize=False).classes("orientation-svg")
                     self.slip_threshold = ui.slider(min=0, max=100, step=1, value=30).props('dense aria-label="Red wheel slip threshold (%)"')
                     self._label("slip_threshold", classes="orientation-caption")
+                with ui.element("div").classes("orientation-dial wheel-slip-panel target-panel").props('role="group" aria-label="Target speed and regime limits"'):
+                    ui.label("TARGET SPEED / REGIME").classes("eyebrow")
+                    self.target_view = ui.html(target_speed_indicator(None, None), sanitize=False).classes("target-svg")
+                    self.navigation_mode_button = ui.button("REGIME —", on_click=self._cycle_navigation_mode)
+                    self.navigation_mode_button.props('flat dense no-wrap aria-label="Cycle navigation mode"').classes("regime-name")
+                    self.navigation_mode_button.disable()
                 with ui.element("div").classes("orientation-dials").props('role="group" aria-label="Vehicle pitch, roll and north-up heading"'):
                     self.orientation_views = {}
                     for key, name, caption, render in (
@@ -438,7 +487,21 @@ class Dashboard:
                         ui.label("AMBER · CAMERA").classes("orientation-camera")
             with ui.element("div").classes("pose-foot"):
                 ui.label("Drag to orbit · Scroll to zoom")
+                self._label("regime_limits", "", "regime-limits")
                 self._label("pose_position", "X +0.0 m / Y +0.0 m")
+
+    def _cycle_navigation_mode(self) -> None:
+        state = self.station.telemetry.state
+        source = self.station.telemetry.source
+        mode = getattr(state.sample, "regime_mode", None)
+        if type(source) is not SerialTelemetrySource or not source.transport_connected or mode not in ("AWAIT", *NAVIGATION_MODES):
+            return
+        modes = tuple(NAVIGATION_MODES)
+        nextMode = (modes.index(mode) + 1) % len(modes) if mode in NAVIGATION_MODES else 0
+        if source.send_rover_command(f"NAV_MODE:{nextMode}"):
+            self.navigation_mode_button.set_text(f"REQUESTED {NAVIGATION_MODES[modes[nextMode]]}")
+            self.navigation_mode_button.disable()
+            self._navigation_request = (mode, time.monotonic() + 3.0)
 
     def _metric(self, key: str, name: str, unit: str) -> None:
         with ui.element("div").classes("metric-row"):
@@ -939,12 +1002,42 @@ class Dashboard:
         angles = (getattr(vehicle_attitude, axis + "_deg", None) for axis in ("pitch", "roll", "heading"))
         orientation = tuple(round(value, 1) if value is not None else None for value in angles) + (
                                 round(orientation_camera, 1) if orientation_camera is not None else None,)
+        tiltLimit = getattr(sample, "regime_pitch_roll_limit_deg", None)
+        orientation += (tiltLimit,)
         if orientation != self._last_orientation:
-            pitch, roll, heading, bearing = orientation
-            self.orientation_views["pitch"].set_content(pitch_indicator(pitch))
-            self.orientation_views["roll"].set_content(roll_indicator(roll))
+            pitch, roll, heading, bearing, tiltLimit = orientation
+            self.orientation_views["pitch"].set_content(pitch_indicator(pitch, tiltLimit))
+            self.orientation_views["roll"].set_content(roll_indicator(roll, tiltLimit))
             self.orientation_views["heading"].set_content(heading_indicator(heading, bearing))
             self._last_orientation = orientation
+        regimeName = getattr(sample, "regime_mode", None)
+        maxVelocity = getattr(sample, "regime_max_velocity_mps", None)
+        command = self.station.drive_command
+        requested = (0.0 if command.brake else command.throttle) if self.station.drive_input_enabled else None
+        turning = 0.0 if command.brake else command.steering
+        maxYawRate = getattr(sample, "regime_max_yaw_rate_dps", None)
+        self.target_view.set_content(target_speed_indicator(requested, maxVelocity, turning, maxYawRate))
+        canChangeMode = (type(source) is SerialTelemetrySource and source.transport_connected
+                         and regimeName in ("AWAIT", *NAVIGATION_MODES))
+        if self._navigation_request is not None:
+            previousMode, expiresAt = self._navigation_request
+            if not canChangeMode or regimeName != previousMode or now >= expiresAt:
+                self._navigation_request = None
+        if self._navigation_request is None:
+            self.navigation_mode_button.set_text(NAVIGATION_MODES.get(regimeName, regimeName or "REGIME —"))
+        self.navigation_mode_button.set_enabled(canChangeMode and self._navigation_request is None)
+        def regimeValue(attribute, suffix):
+            value = getattr(sample, attribute, None)
+            return f"{value:g}{suffix}" if value is not None else "—"
+        self.values["regime_limits"].set_visibility(maxVelocity is not None)
+        self._text("regime_limits", " / ".join((
+            "MAX " + regimeValue("regime_max_velocity_mps", " m/s"),
+            "ACC " + regimeValue("regime_max_acceleration_mps2", " m/s²"),
+            "YAW " + regimeValue("regime_max_yaw_rate_dps", "°/s"),
+            "YAW ACC " + regimeValue("regime_max_yaw_acceleration_dps2", "°/s²"),
+            "TILT ±" + regimeValue("regime_pitch_roll_limit_deg", "°"),
+            "YAW LIMIT " + regimeValue("regime_yaw_limit_deg", "°"),
+            "OUTPUT " + regimeValue("regime_min_output_percent", "%") + "–" + regimeValue("regime_max_output_percent", "%"))))
         self._text("orientation_camera", f"CAM {round(orientation_camera, 1) % 360:05.1f}°" if orientation_camera is not None else "CAM —")
         self._refresh_navigation(motion, available=sample is not None and simulated,
                                  simulated=simulated, camera_heading=orientation_camera)
@@ -952,9 +1045,10 @@ class Dashboard:
         wheels = sample.wheel_slip if sample else None
         red_at = int(self.slip_threshold.value)
         thrust = self.station.virtual_rover.wheel_thrust if simulated else None
-        self.slip_view.set_content(wheel_slip_indicator(wheels, red_at, thrust))
-        self._text("slip_threshold", f"RED AT {red_at}%" if red_at else "RED ABOVE 0%")
         rpms = sample.wheel_rpm if sample else None
+        self._text("wheel_panel_title", "WHEEL SLIP / THRUST" if simulated else "WHEEL SLIP / RPM")
+        self.slip_view.set_content(wheel_slip_indicator(wheels, red_at, thrust, rpm=None if simulated else rpms))
+        self._text("slip_threshold", f"RED AT {red_at}%" if red_at else "RED ABOVE 0%")
         currents = sample.motor_current_a if sample else None
         for i, fill in enumerate(self.wheel_fills):
             value = wheels[i] if wheels else None
@@ -1019,7 +1113,15 @@ class Dashboard:
         self.brake_button.set_text("BRAKE ON" if latched else "BRAKE OFF")
         self.brake_button.props(f'aria-pressed="{str(latched).lower()}"')
         self._text("drive_command", "BRAKE" if command.brake and self.station.drive_input_enabled else f"Throttle {command.throttle:+.2f} / Turn {command.steering:+.2f}")
-        self._text("drive_hint", ("W/S or ↑/↓ sends DRIVE · A/D steer · Space brake" if self.station.drive.mode == "keyboard" else "R2 sends DRIVE · Left stick steers · L2 brakes") if radio_bench else "USB telemetry / drive commands enabled" if not simulated else "Simulation paused" if paused else "W/S or ↑/↓ drive · A/D steer · Space hold / B toggle brake" if self.station.drive.mode == "keyboard" else "R2 accelerate · Left stick steer · L2 hold / Start toggle brake")
+        if paused:
+            driveHint = "Simulation paused"
+        elif self.station.drive.mode == "keyboard":
+            driveHint = "W/S drive · A/D steer · Space hold / B toggle brake"
+        elif self.station.reverse_trigger_enabled:
+            driveHint = "R2 forward · L2 reverse · Left stick steer · Options brake"
+        else:
+            driveHint = "R2 forward · L2 brake · Left stick steer · Options brake"
+        self._text("drive_hint", driveHint)
         self.values["controller"].props(f'title="{escape(controller.status)}"')
         age = "" if state.age_seconds is None else f" / age {state.age_seconds:.1f}s"
         link_status = "radio open" if radio_open else "radio offline" if radio_bench else state.status.value

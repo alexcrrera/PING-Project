@@ -155,7 +155,7 @@ private:
         Handler handler{};
     };
 
-    GroupEntry groups[6];
+    GroupEntry groups[7];
 
     void send_group(const GroupEntry* group);
 };

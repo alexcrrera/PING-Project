@@ -52,6 +52,15 @@ class RoverTelemetrySample(TelemetrySample):
     gimbal_validity: int | None = None
     brake_override: bool | None = None
     regime_mode: str | None = None
+    regime_dynamic: bool | None = None
+    regime_max_velocity_mps: float | None = None
+    regime_max_acceleration_mps2: float | None = None
+    regime_max_yaw_rate_dps: float | None = None
+    regime_max_yaw_acceleration_dps2: float | None = None
+    regime_pitch_roll_limit_deg: float | None = None
+    regime_yaw_limit_deg: float | None = None
+    regime_min_output_percent: float | None = None
+    regime_max_output_percent: float | None = None
     low_priority_fields: tuple[str, ...] | None = None
 
 

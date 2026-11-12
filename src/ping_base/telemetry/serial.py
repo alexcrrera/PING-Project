@@ -188,10 +188,10 @@ class SerialTelemetrySource:
         return True
 
     def send_rover_command(self, command: str) -> bool:
-        """Send one drive or button frame on the current rover connection."""
+        """Send one rover control frame on the current rover connection."""
         if not (command.startswith("DRIVE:") or command.startswith("STICK:")
                 or command.startswith("BUTTON:") or command.startswith("LEFT:")
-                or command.startswith("TRIG:")):
+                or command.startswith("TRIG:") or command in ("NAV_MODE:0", "NAV_MODE:1", "NAV_MODE:2")):
             raise ValueError("Unknown rover command")
         return self.send_gimbal_command(command)
 

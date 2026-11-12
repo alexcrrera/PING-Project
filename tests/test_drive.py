@@ -300,6 +300,31 @@ class StationDrivingTests(unittest.TestCase):
         self.assertIn(b"TRIG:0.00,0.70\n", port.writes)
         self.assertTrue(any(line == b"DRIVE:+0.70,+0.00,0\n" for line in port.writes))
 
+    def test_traction_mode_sends_signed_trigger_request_and_preserves_brake(self):
+        port = ReceivingOnlyPort()
+        port.data = b"$RVR,RGM,NAVIGATION_TRACTION,1,0.5,2,30,2500,15,9999,0,100*\n"
+        source = SerialTelemetrySource("COM7", serial_factory=lambda **kwargs: port)
+        self.station.replace_telemetry(source)
+        self.station.tick()
+        self.station.set_drive_mode("dualshock")
+
+        for left, right, frame in (
+            (1.0, 0.0, b"DRIVE:-1.00,+0.00,0\n"),
+            (0.0, 1.0, b"DRIVE:+1.00,+0.00,0\n"),
+            (0.75, 0.75, b"DRIVE:+0.00,+0.00,0\n"),
+            (0.25, 0.75, b"DRIVE:+0.50,+0.00,0\n"),
+        ):
+            self.controller.state = self.controller.model.update(
+                RawInput(connected=True, device_id="pad", l2=left, r2=right))
+            port.writes.clear()
+            self.frames(.1)
+            self.assertIn(frame, port.writes)
+
+        self.station.toggle_brake()
+        port.writes.clear()
+        self.frames(.1)
+        self.assertIn(b"DRIVE:+0.00,+0.00,1\n", port.writes)
+
     def test_serial_stabilization_cycles_from_reported_and_pending_modes(self):
         port = ReceivingOnlyPort()
         port.data = b"$RVR,GMBL,0,0,0,2,0,0,0*\n"
