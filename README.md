@@ -1,6 +1,6 @@
-# PING / Rover ground station
+# PINGUIN / Rover ground station
 
-A modular Python ground station for the four-wheel PING rover. The interface
+PINGUIN is the modular Python ground station for the four-wheel PING rover. The interface
 prioritizes terrain observation, traction and stability: a central camera with
 crosshair and telemetry overlay, an interactive rover model underneath, and a
 telemetry column with ground speed, wheel slip, power, thermals and radio health.
@@ -13,6 +13,9 @@ optional PS4 hardware adapter and standalone input diagnostic tool. The model,
 device adapters, application services and presentation are separate objects.
 
 ## Run
+
+On Windows, open **PINGUIN.lnk** to launch the dashboard without a console.
+The launcher opens the existing dashboard if it is already running.
 
 Requires Python 3.10 or newer. From this project folder in PowerShell:
 

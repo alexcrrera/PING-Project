@@ -14,7 +14,7 @@ from .viewer import ControllerViewer, SIZE
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="PING PS4 controller input viewer")
+    parser = argparse.ArgumentParser(description="PINGUIN PS4 controller input viewer")
     parser.add_argument("--demo", action="store_true", help="use keyboard input instead of hardware")
     parser.add_argument("--list-devices", action="store_true", help="print available SDL devices and exit")
     parser.add_argument("--device-index", type=int, help="select a mapped SDL device by index")
@@ -40,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
                 joystick.quit()
             return 0
         surface = pygame.display.set_mode(SIZE)
-        pygame.display.set_caption("PING | PS4 controller input")
+        pygame.display.set_caption("PINGUIN | PS4 controller input")
         source = KeyboardInput() if args.demo else PygamePS4Input(args.device_index)
         controller = PS4Controller(args.deadzone)
         viewer = ControllerViewer()

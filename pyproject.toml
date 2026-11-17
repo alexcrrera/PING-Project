@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ping-base"
 version = "0.2.0"
-description = "PING rover ground station with camera, attitude and replaceable telemetry"
+description = "PINGUIN ground station for the PING rover with camera, attitude and replaceable telemetry"
 requires-python = ">=3.10"
 dependencies = ["nicegui==3.8.0", "pygame==2.6.1", "Pillow>=11.2,<13", "pyserial==3.5", "opencv-python>=4.11,<5", "numpy>=1.26,<3"]
 
@@ -13,6 +13,7 @@ dependencies = ["nicegui==3.8.0", "pygame==2.6.1", "Pillow>=11.2,<13", "pyserial
 camera = []
 
 [project.scripts]
+pinguin = "ping_base.cli:main"
 ping-base = "ping_base.cli:main"
 ping-controller = "ping_base.app:main"
 
@@ -20,4 +21,4 @@ ping-controller = "ping_base.app:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-ping_base = ["telemetry/PROTOCOL.md", "assets/*.json", "assets/ping-icon.png"]
+ping_base = ["telemetry/PROTOCOL.md", "assets/*.json", "assets/pinguin-icon.png", "assets/pinguin-icon.ico"]

@@ -31,8 +31,8 @@ from .telemetry.serial import RAW_LOG_LINES
 from .theme import CSS
 
 
-PING_ICON_PATH = Path(__file__).with_name("assets") / "ping-icon.png"
-PING_ICON_URL = "/assets/ping-icon.png"
+PING_ICON_PATH = Path(__file__).with_name("assets") / "pinguin-icon.png"
+PING_ICON_URL = "/assets/pinguin-icon.png"
 
 
 ICONS = {
@@ -237,7 +237,7 @@ class Dashboard:
         with ui.element("header").classes("topbar"):
             with ui.element("div").classes("brand"):
                 ui.element("img").props(f'src="{PING_ICON_URL}" alt="" width="32" height="32"').classes("brand-icon")
-                ui.label("PING").classes("brand-word")
+                ui.label("PINGUIN").classes("brand-word")
                 ui.element("div").classes("brand-divider")
                 ui.html("GROUND SYSTEMS<br>ROVER / 01", sanitize=False).classes("eyebrow")
             with ui.element("div").classes("top-meta"):

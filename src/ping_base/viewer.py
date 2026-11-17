@@ -54,7 +54,7 @@ class ControllerViewer:
 
     def render(self, surface: pygame.Surface, state: ControllerState, status: str, demo: bool = False):
         surface.fill(BG)
-        self._text(surface, "PING / CONTROLLER INPUT", (28, 22), font=self.title)
+        self._text(surface, "PINGUIN / CONTROLLER INPUT", (28, 22), font=self.title)
         self._text(surface, "CONNECTED" if state.connected else "DISCONNECTED", (28, 63), GREEN if state.connected else GOLD)
         self._text(surface, state.name[:68], (185, 63))
         self._text(surface, status[:115], (28, 94), MUTED, self.small)

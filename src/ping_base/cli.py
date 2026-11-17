@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import base64
+from io import BytesIO
 import math
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(description="PING rover ground station / NiceGUI")
+    result = argparse.ArgumentParser(description="PINGUIN rover ground station")
     result.add_argument("--host", default="127.0.0.1", help="listen address, default local computer only")
     result.add_argument("--port", type=int, default=8080, help="dashboard port (default 8080)")
     result.add_argument("--no-browser", action="store_true", help="do not open the dashboard automatically")
@@ -21,6 +23,17 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--font-dir", help="folder containing local Suisse Intl Light and Medium font files")
     result.add_argument("--seed", type=int, default=7, help="repeatable simulated telemetry seed")
     return result
+
+
+def faviconDataUrl(path) -> str:
+    """Embed the current icon so browsers do not reuse an outdated favicon."""
+    from PIL import Image
+
+    with Image.open(path) as icon:
+        icon.thumbnail((64, 64), Image.Resampling.LANCZOS)
+        buffer = BytesIO()
+        icon.save(buffer, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -60,6 +73,6 @@ def main(argv: list[str] | None = None) -> int:
     configure_dashboard(station, font_dir=args.font_dir)
     # SDL and service lifecycles remain on one process's main event-loop thread.
     ui.run(host=args.host, port=args.port, reload=False, native=False, show=not args.no_browser,
-           title="PING / Rover operations", dark=True, favicon=str(PING_ICON_PATH), show_welcome_message=False,
+           title="PINGUIN | Rover operations", dark=True, favicon=faviconDataUrl(PING_ICON_PATH), show_welcome_message=False,
            binding_refresh_interval=.1, reconnect_timeout=5.0)
     return 0
