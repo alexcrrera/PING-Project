@@ -2,6 +2,7 @@
 #include "MotorManager.h"
 #include "../FlightManager/FlightManager.h"
 #include "../Config/ActuatorsConfig.h"
+#include "../Config/GimbalConfig.h"
 
 #include "../Config/SystemConfig.h"
 
@@ -10,8 +11,10 @@ void MotorManager::begin(FlightManager* fm){
     flight_manager = fm; // flight manager is not used in this implementation, but can be set if needed
     // attaches actuators to hardware pins
     ESC.attach(ActuatorsConfig::ESC);
-    vane_X1.attach(ActuatorsConfig::Servo_X1);
-    vane_X2.attach(ActuatorsConfig::Servo_X2);
+    if (!GimbalConfig::servosEnabled) {
+        vane_X1.attach(ActuatorsConfig::Servo_X1);
+        vane_X2.attach(ActuatorsConfig::Servo_X2);
+    }
     vane_Y1.attach(ActuatorsConfig::Servo_Y1);
     vane_Y2.attach(ActuatorsConfig::Servo_Y2);
 
@@ -65,15 +68,19 @@ void MotorManager::actuate_EDF(){
 void MotorManager::actuate_vanes(){
 
     if (vanes_enabled) {
-        vane_X1.write(current_actuator_command.vaneX1_deg);
-        vane_X2.write(current_actuator_command.vaneX2_deg);
+        if (!GimbalConfig::servosEnabled) {
+            vane_X1.write(current_actuator_command.vaneX1_deg);
+            vane_X2.write(current_actuator_command.vaneX2_deg);
+        }
         vane_Y1.write(current_actuator_command.vaneY1_deg);
         vane_Y2.write(current_actuator_command.vaneY2_deg);
     }
     else {
         // If vanes are disabled, set them to neutral position (0 degrees)
-        vane_X1.write(0.0f);
-        vane_X2.write(0.0f);
+        if (!GimbalConfig::servosEnabled) {
+            vane_X1.write(0.0f);
+            vane_X2.write(0.0f);
+        }
         vane_Y1.write(0.0f);
         vane_Y2.write(0.0f);
     }

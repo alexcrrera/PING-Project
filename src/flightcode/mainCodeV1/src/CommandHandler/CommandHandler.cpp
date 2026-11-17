@@ -38,8 +38,6 @@ RoverDriveInput CommandHandler::getDriveInput() const
         result.leftY = 0.0f;
         result.leftTrigger = 0.0f;
         result.rightTrigger = 0.0f;
-        result.cameraPan = 0.0f;
-        result.cameraTilt = 0.0f;
         result.brake = true;
     }
     if (millis() - result.lastStickTime > 500)

@@ -118,7 +118,7 @@ void Gimbal::actuate()
 {
     if (GimbalConfig::servosEnabled)
     {
-        panServo.write(pan_deg);
-        tiltServo.write(tilt_deg);
+        panServo.write(GimbalConfig::panServoDirection * pan_deg);
+        tiltServo.write(GimbalConfig::tiltServoDirection * tilt_deg);
     }
 }

@@ -4,14 +4,16 @@
 
 namespace GimbalConfig
 {
-    // Set these pins and calibrations for the installed servos before enabling.
-    constexpr bool servosEnabled = false;
+    // X1 and X2 are reserved for the gimbal when servos are enabled.
+    constexpr bool servosEnabled = true;
     constexpr float updateFrequency = 50.0f;
     constexpr float panSpeed_deg_s = 45.0f;
     constexpr float tiltSpeed_deg_s = 45.0f;
+    constexpr float panServoDirection = -1.0f;
+    constexpr float tiltServoDirection = -1.0f;
 
     constexpr ActuatorPWM_config panServo = {
-        .pin = 0,
+        .pin = ActuatorsConfig::Servo_X1_pin,
         .frequency = updateFrequency,
         .pulseMin = 1000,
         .pulseMax = 2000,
@@ -22,7 +24,7 @@ namespace GimbalConfig
     };
 
     constexpr ActuatorPWM_config tiltServo = {
-        .pin = 0,
+        .pin = ActuatorsConfig::Servo_X2_pin,
         .frequency = updateFrequency,
         .pulseMin = 1000,
         .pulseMax = 2000,
