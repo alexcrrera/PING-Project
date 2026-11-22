@@ -35,6 +35,23 @@ class CameraTests(unittest.TestCase):
         self.assertEqual(first[:3], (jpeg, 64, 48))
         self.assertEqual(second[:3], (jpeg, 64, 48))
 
+    def test_ffmpeg_reconnects_and_clears_error_after_new_frame(self):
+        source = FFmpegCameraSource("tcp://example:8888")
+        def capture(now):
+            if not source._open.called:
+                raise RuntimeError("stream ended")
+            source._stop.set()
+            return b"jpeg", 64, 48, now
+        source._capture_frame = Mock(side_effect=capture)
+        source._open = Mock()
+        source._close = Mock()
+        with patch.object(source._stop, "wait", return_value=False):
+            source._run()
+        source._open.assert_called_once()
+        self.assertEqual(source.status, "Connected")
+        self.assertIsNone(source.error)
+        self.assertEqual(source.latest_frame().jpeg, b"jpeg")
+
     def test_network_source_uses_newest_queued_frame(self):
         source = OpenCVCameraSource("tcp://example:8888")
         source._messages = queue.Queue()

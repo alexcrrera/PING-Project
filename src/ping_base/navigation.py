@@ -190,7 +190,7 @@ def world_map(latitude: float | None, longitude: float | None,
               trail: tuple[tuple[float, float], ...] = (), *, zoom: float = 1,
               layer: str = "street", horizontal_error_m: float | None = None,
               thunderforest_key: str = "", maptiler_key: str = "",
-              targets: tuple = ()) -> str:
+              targets: tuple = (), pins: tuple = ()) -> str:
     """North-up map centered on a geographic fix, using OpenStreetMap tiles.
 
     Tiles are requested by the browser and require internet access. GPS remains
@@ -276,6 +276,18 @@ def world_map(latitude: float | None, longitude: float | None,
                         '<circle r="7" fill="#17160f" stroke="#ffc166" stroke-width="2"/>'
                         f'<circle r="2" fill="#ffc166"/><text x="10" y="-8" fill="#fff" '
                         f'stroke="#111" stroke-width="3" paint-order="stroke" font-size="10">{markerLabel}</text></g>')
+        for index, pin in enumerate(pins, 1):
+            if (not isinstance(pin, (tuple, list)) or len(pin) != 2 or
+                    not all(_finite(v) for v in pin) or abs(pin[0]) > 90 or abs(pin[1]) > 180):
+                continue
+            x, y = project(*pin)
+            dx = (x - centerX + worldSize / 2) % worldSize - worldSize / 2
+            px, py = 200 + dx, 200 + y - centerY
+            content += (f'<g data-role="pin-{index}" transform="translate({px:.2f} {py:.2f})">'
+                        '<path d="M0 0C-3 -5 -7 -8 -7 -12a7 7 0 0 1 14 0C7 -8 3 -5 0 0Z" '
+                        'fill="#ff5e56" stroke="#17160f" stroke-width="1.5"/>'
+                        f'<text x="9" y="-10" fill="#fff" stroke="#111" stroke-width="3" '
+                        f'paint-order="stroke" font-size="10">{index}</text></g>')
         if _finite(camera_heading_deg):
             content += (f'<g data-role="camera" transform="translate(200 200) rotate({camera_heading_deg % 360:.2f})" '
                         f'stroke="{_CAMERA_COLOR}" stroke-linejoin="round">'

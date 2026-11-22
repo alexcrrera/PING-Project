@@ -201,6 +201,7 @@ class Dashboard:
         self._log_cursor = 0
         self._last_navigation: tuple | None = None
         self._navigation_trail: list[tuple[float, float]] = []
+        self._map_pins: list[tuple[float, float]] = []
         self._navigation_simulated: bool | None = None
         self.map_expanded = False
         self.map_zoom_index = MAP_ZOOM_LEVELS.index(1)
@@ -366,6 +367,9 @@ class Dashboard:
                 self._label("map_gps", "GPS —", "navigation-coordinates")
                 self._label("map_state", "GPS / WAITING", "navigation-state")
                 self._navigation_metrics("map")
+                with ui.element("div").classes("map-pin-controls"):
+                    ui.button("PIN / R3", icon="add_location_alt", on_click=self.add_map_pin).props('flat dense no-caps')
+                    ui.button("CLEAR PINS", on_click=self.clear_map_pins).props('flat dense no-caps')
 
     def _expanded_map(self) -> None:
         # Keep the map under the fullscreen camera root so M works in fullscreen.
@@ -471,7 +475,7 @@ class Dashboard:
             self.filter_switches = {}
             for title, names in (("ENHANCEMENTS", ("denoise", "contrast", "sharpen", "invert")),
                                  ("VISION EFFECTS", VISION_EFFECTS),
-                                 ("OVERLAYS", ("edges", "scanlines"))):
+                                 ("OVERLAYS", ("edges",))):
                 ui.label(title).classes("filter-group-title")
                 with ui.element("div").classes("filter-switch-grid"):
                     for name in names:
@@ -625,7 +629,7 @@ class Dashboard:
                 self._metric("age", "Last packet", "ms")
                 self._label("packet_count", "0 VALID PACKETS", "subtext mt-2")
                 self._label("serial_link", "", "subtext mt-2")
-                self._label("serial_preview", "", "subtext").style("overflow-wrap:anywhere")
+                self._label("serial_preview", "", "subtext serial-preview")
                 self._label("rover_groups", "", "subtext mt-2").style("white-space:pre-line;overflow-wrap:anywhere")
                 self.radio_test_button = ui.button("Send TEST line", icon="send", on_click=self.send_radio_test).props("outline dense")
             with ui.element("div").classes("telemetry-section").style("border-bottom:0"):
@@ -918,6 +922,29 @@ class Dashboard:
         if isinstance(delta, (int, float)) and not isinstance(delta, bool) and math.isfinite(delta) and delta:
             self.zoom_map(1 if delta < 0 else -1)
 
+    def add_map_pin(self) -> None:
+        state = self.station.telemetry.state
+        source = self.station.telemetry.source
+        sample = state.sample if state.connected else None
+        frames = getattr(source, "latest_group_frames", {})
+        frame = frames.get("GMBL")
+        targets = getattr(sample, "gimbal_targets", None)
+        if frame is None or time.monotonic() - frame[0] >= GROUP_EXPIRY["GMBL"] or not targets:
+            ui.notify("No fresh LiDAR target available")
+            return
+        target = next((point for point in targets if point is not None), None)
+        if target is None:
+            ui.notify("No valid LiDAR target available")
+            return
+        self._map_pins.append(tuple(target))
+        self._map_pins = self._map_pins[-100:]
+        ui.notify(f"Map pin {len(self._map_pins)} added")
+        self.refresh()
+
+    def clear_map_pins(self) -> None:
+        self._map_pins.clear()
+        self.refresh()
+
     def _refresh_navigation(self, motion, sample, *, simulated: bool,
                             camera_heading: float | None) -> None:
         if self._navigation_simulated != simulated:
@@ -967,11 +994,11 @@ class Dashboard:
         zoom = MAP_ZOOM_LEVELS[self.map_zoom_index]
         horizontalError = getattr(sample, "gnss_horizontal_uncertainty_m", None) if position else None
         targets = getattr(sample, "gimbal_targets", None) if position and not simulated else None
-        navigation = (*values, zoom, self.map_layer, horizontalError, targets, tuple(self._navigation_trail))
+        navigation = (*values, zoom, self.map_layer, horizontalError, targets, tuple(self._map_pins), tuple(self._navigation_trail))
         if navigation != self._last_navigation:
             content = world_map(*values, trail=tuple(self._navigation_trail), zoom=zoom, layer=self.map_layer,
                                 horizontal_error_m=horizontalError, thunderforest_key=self.thunderforest_key,
-                                maptiler_key=self.maptiler_key, targets=targets or ())
+                                maptiler_key=self.maptiler_key, targets=targets or (), pins=tuple(self._map_pins))
             self._map_content = content
             self._update_map_element(self.map_mini, content)
             if self.map_expanded:
@@ -997,6 +1024,8 @@ class Dashboard:
                 self.step_camera_zoom(-1)
             elif action == "map_zoom":
                 self.cycle_map_zoom()
+            elif action == "map_pin":
+                self.add_map_pin()
         sequence = self.station.map_toggle_sequence
         if sequence != self._map_toggle_sequence:
             if (sequence - self._map_toggle_sequence) % 2:

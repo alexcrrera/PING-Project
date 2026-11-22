@@ -19,6 +19,7 @@ class DashboardControlTests(unittest.TestCase):
         self.page.map_zoom_index = MAP_ZOOM_LEVELS.index(1)
         self.page.map_zoom_controls = [(Mock(), Mock(), Mock())]
         self.page.refresh = Mock()
+        self.page._map_pins = []
         self.page.map_layer = "street"
         self.page.thunderforest_key = "test-dark"
         self.page.maptiler_key = "test-satellite"
@@ -75,6 +76,20 @@ class DashboardControlTests(unittest.TestCase):
             self.page._expanded_map()
         for suffix in ("sats", "error", "speed_error", "tracking"):
             self.assertIn("map_large_" + suffix, self.page.values)
+
+    def test_pin_records_fresh_target_and_rejects_expired(self):
+        sample = RoverTelemetrySample(received_at=10, gimbal_targets=((48.0, 2.0), None))
+        state = SimpleNamespace(connected=True, sample=sample)
+        source = SimpleNamespace(latest_group_frames={"GMBL": (10, ())})
+        self.page.station = SimpleNamespace(telemetry=SimpleNamespace(state=state, source=source))
+        with patch("ping_base.dashboard.time.monotonic", return_value=10.5), patch("ping_base.dashboard.ui.notify"):
+            self.page.add_map_pin()
+        self.assertEqual(self.page._map_pins, [(48.0, 2.0)])
+        with patch("ping_base.dashboard.time.monotonic", return_value=12), patch("ping_base.dashboard.ui.notify"):
+            self.page.add_map_pin()
+        self.assertEqual(len(self.page._map_pins), 1)
+        self.page.clear_map_pins()
+        self.assertEqual(self.page._map_pins, [])
 
     def test_navigation_uses_live_gnss_and_clears_stale_fix(self):
         self.page._navigation_trail = []

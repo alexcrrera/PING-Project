@@ -52,7 +52,7 @@ namespace CommsConfig {
 
     inline constexpr GroupConfig GMBL = {
         .name = "GMBL",
-        .frequency = 10.0f,
+        .frequency = 5.0f,
         .enabled_for_USB = false,
         .enabled_for_RADIO = true,
         .enabled_for_CONTROLLER = false

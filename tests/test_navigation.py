@@ -75,6 +75,11 @@ class NavigationTests(unittest.TestCase):
         self.assertIsNotNone(element(svg, 'target-2'))
         self.assertIsNone(element(world_map(None, None, 0, 0, targets=((48, 2),)), 'target-1'))
 
+    def test_saved_pins_are_rendered_independently_of_live_target(self):
+        svg = world_map(48, 2, 0, 0, pins=((48.0001, 2.0001),))
+        self.assertIsNotNone(element(svg, 'pin-1'))
+        self.assertIsNone(element(svg, 'target-1'))
+
     def test_world_map_without_fix_has_no_marker_or_tile_requests(self):
         for lat, lon in ((None, None), (float('nan'), 2), (91, 2), (48, 181)):
             svg = world_map(lat, lon, 0, 0)

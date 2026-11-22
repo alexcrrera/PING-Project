@@ -43,6 +43,7 @@ button:focus-visible, a:focus-visible { outline:1px solid var(--accent)!importan
 .telemetry-monitor:target { display:flex; flex-direction:column; gap:16px; overflow:auto; }
 .workspace:has(.telemetry-monitor:target)>.layout { display:none; }
 .telemetry-mobile-link { display:none; color:var(--accent); font-size:11px; }
+.serial-preview { display:block; width:100%; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .telemetry-group-columns { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,155px),1fr)); gap:12px; }
 .telemetry-group-card { min-width:0; }
 .telemetry-group-card .panel-head, .telemetry-terminal .panel-head { min-height:34px; flex-shrink:0; }
@@ -81,6 +82,8 @@ button:focus-visible, a:focus-visible { outline:1px solid var(--accent)!importan
 .map-mini>svg, .map-large>svg { display:block; width:100%; height:100%; }
 .navigation-coordinates { color:#eceee0; font-size:10px; font-variant-numeric:tabular-nums; line-height:1.5; margin-top:6px; white-space:nowrap; }
 .navigation-state { color:#a9b096; font-size:8px; line-height:1.4; letter-spacing:.07em; }
+.map-pin-controls { display:flex; gap:8px; margin-top:4px; }
+.map-pin-controls .q-btn { min-height:22px; padding:2px 4px; font-size:9px; color:#d5dac6; }
 .navigation-metrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:5px 10px; margin-top:7px; width:100%; }
 .navigation-metric { min-width:0; display:flex; align-items:baseline; justify-content:space-between; gap:5px; }
 .navigation-metric-label { color:#969f89; font-size:8px; letter-spacing:.05em; }
@@ -147,7 +150,7 @@ button:focus-visible, a:focus-visible { outline:1px solid var(--accent)!importan
 .camera-compass svg { width:100%; height:100%; display:block; }
 .crosshair { position:absolute; width:110px; height:83px; top:50%; left:50%; transform:translate(-50%,-50%); opacity:1; pointer-events:none; filter:drop-shadow(0 1px 2px #0007); }
 .crosshair svg { width:100%; height:100%; display:block; }
-.rangefinder-overlay { position:absolute; top:calc(50% + 51px); left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:8px; padding:4px 7px; color:#f3f6e6; background:#0d140bdf; border:1px solid #c2c9a45e; pointer-events:none; text-shadow:0 1px 2px #000; white-space:nowrap; }
+.rangefinder-overlay { position:absolute; top:calc(50% + 51px); left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:8px; padding:4px 7px; color:#f3f6e6; background:#000000; border:1px solid #c2c9a45e; pointer-events:none; text-shadow:0 1px 2px #000; white-space:nowrap; }
 .rangefinder-label { color:#c9cdb4; font-size:10px; letter-spacing:.09em; }
 .rangefinder-value { font-size:20px; font-weight:500; line-height:1.15; font-variant-numeric:tabular-nums; }
 .camera-bottom { position:absolute; bottom:18px; left:18px; right:18px; display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); grid-template-areas:"telemetry aim zoom"; align-items:end; gap:8px 12px; }

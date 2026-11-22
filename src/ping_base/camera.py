@@ -794,6 +794,38 @@ class FFmpegCameraSource(_LatestFrameSource):
             self._buffer.extend(chunk)
         return None
 
+    def _run(self) -> None:
+        sequence = 0
+        try:
+            while not self._stop.is_set():
+                try:
+                    frame = self._capture_frame(time.monotonic())
+                    if frame is not None:
+                        jpeg, width, height, capturedAt = frame[:4]
+                        sequence += 1
+                        with self._lock:
+                            self._frame = CameraFrame(jpeg, sequence, capturedAt, width, height)
+                            self._error = None
+                            self._status = "Connected"
+                except Exception as exc:
+                    if self._stop.is_set():
+                        break
+                    self._close()
+                    with self._lock:
+                        self._frame = None
+                        self._error = f"{exc} Reconnecting automatically."
+                        self._status = "Reconnecting"
+                    while not self._stop.wait(2.0):
+                        try:
+                            self._open()
+                            break
+                        except Exception as retryError:
+                            self._close()
+                            with self._lock:
+                                self._error = f"{retryError} Reconnecting automatically."
+        finally:
+            self._close()
+
     def close(self) -> None:
         self._stop.set()
         process = self._process

@@ -261,7 +261,8 @@ class BaseStation:
                                            (Button.R1, "camera_zoom_in"),
                                            (Button.LEFT, "camera_zoom_out"),
                                            (Button.L1, "camera_zoom_out"),
-                                           (Button.TRIANGLE, "map_zoom")):
+                                           (Button.TRIANGLE, "map_zoom"),
+                                           (Button.R3, "map_pin")):
                         if control.buttons[button].pressed:
                             self.controller_action_sequence += 1
                             self.controller_actions.append((self.controller_action_sequence, action))
