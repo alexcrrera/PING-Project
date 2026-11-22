@@ -11,7 +11,8 @@ from functools import lru_cache
 from html import escape
 from importlib.resources import files
 import json
-from math import atan2, cos, degrees, hypot, isfinite, radians
+from math import atan2, cos, degrees, floor, hypot, isfinite, log, log2, pi, radians, tan
+from urllib.parse import quote
 
 
 JUSSIEU_LAT = 48.84586370113
@@ -170,6 +171,127 @@ def campus_map(x_m: float | None, y_m: float | None, heading_deg: float | None,
                 f'<path d="M0 -4V0H{scale_length:.2f}V-4" stroke="#d9dfc9" fill="none"/>'
                 f'<text x="{scale_length / 2:.2f}" y="14" text-anchor="middle">{scale_m} m</text></g>'
                 '<text x="385" y="388" fill="#88947e" font-size="8" text-anchor="end">© OpenStreetMap contributors</text>')
+    return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" '
+            f'aria-label="{escape(label, quote=True)}" font-family="Suisse,Arial,sans-serif">'
+            f'<title>{escape(label)}</title>{content}</svg>')
+
+
+WEB_MERCATOR_MAX_LAT = 85.05112878
+MAP_LAYERS = ("street", "dark", "satellite")
+MAP_ATTRIBUTION = {
+    "street": "© OpenStreetMap contributors",
+    "dark": "© Thunderforest, © OpenStreetMap contributors",
+    "satellite": "© MapTiler © OpenStreetMap contributors",
+}
+
+
+def world_map(latitude: float | None, longitude: float | None,
+              heading_deg: float | None, camera_heading_deg: float | None,
+              trail: tuple[tuple[float, float], ...] = (), *, zoom: float = 1,
+              layer: str = "street", horizontal_error_m: float | None = None,
+              thunderforest_key: str = "", maptiler_key: str = "") -> str:
+    """North-up map centered on a geographic fix, using OpenStreetMap tiles.
+
+    Tiles are requested by the browser and require internet access. GPS remains
+    useful without a tile connection. Web Mercator is limited to about 85° N/S.
+    """
+    if zoom not in MAP_ZOOM_LEVELS or isinstance(zoom, bool):
+        raise ValueError('Unsupported map zoom')
+    if layer not in MAP_LAYERS:
+        raise ValueError('Unsupported map layer')
+    valid = (_finite(latitude) and _finite(longitude) and
+             -90 <= latitude <= 90 and -180 <= longitude <= 180)
+    content = f'<rect width="400" height="400" fill="{_MAP_BACKGROUND}"/>'
+    if valid:
+        level = 17 + int(log2(zoom))
+        # OSM standard tiles stop at z19. At z20 use the configured
+        # Thunderforest Atlas layer; without a key, enlarge z19 tiles.
+        atlasStreet = layer == "street" and level > 19 and bool(thunderforest_key)
+        tileLevel = min(level, 19) if layer == "street" and not atlasStreet else level
+        tileScale = 2 ** (level - tileLevel)
+        tileSize = 256 * tileScale
+        tileCount = 1 << tileLevel
+        worldSize = tileSize * tileCount
+
+        def project(lat, lon):
+            lat = max(-WEB_MERCATOR_MAX_LAT, min(WEB_MERCATOR_MAX_LAT, lat))
+            x = ((lon + 180) / 360) * worldSize
+            y = (1 - log(tan(pi / 4 + radians(lat) / 2)) / pi) / 2 * worldSize
+            return x, y
+
+        centerX, centerY = project(latitude, longitude)
+        minX = floor((centerX - 200) / tileSize)
+        maxX = floor((centerX + 200) / tileSize)
+        minY = max(0, floor((centerY - 200) / tileSize))
+        maxY = min(tileCount - 1, floor((centerY + 200) / tileSize))
+        content += '<g data-role="basemap">'
+        for tileY in range(minY, maxY + 1):
+            for tileX in range(minX, maxX + 1):
+                x, y = 200 + tileX * tileSize - centerX, 200 + tileY * tileSize - centerY
+                tileColumn = tileX % tileCount
+                if atlasStreet:
+                    url = (f'https://tile.thunderforest.com/atlas/{tileLevel}/{tileColumn}/{tileY}.png'
+                           f'?apikey={quote(thunderforest_key, safe="")}')
+                elif layer == 'street':
+                    url = f'https://tile.openstreetmap.org/{tileLevel}/{tileColumn}/{tileY}.png'
+                elif layer == 'dark':
+                    url = (f'https://tile.thunderforest.com/transport-dark/{tileLevel}/{tileColumn}/{tileY}.png'
+                           f'?apikey={quote(thunderforest_key, safe="")}')
+                else:
+                    url = (f'https://api.maptiler.com/maps/satellite-v4/{tileLevel}/{tileColumn}/{tileY}.jpg'
+                           f'?key={quote(maptiler_key, safe="")}')
+                content += (f'<image x="{x:.3f}" y="{y:.3f}" width="{tileSize}" height="{tileSize}" '
+                            f'href="{escape(url, quote=True)}" preserveAspectRatio="none"/>')
+        content += '</g>'
+        points = []
+        for point in trail[-256:]:
+            if (isinstance(point, (tuple, list)) and len(point) == 2 and
+                    all(_finite(value) for value in point) and
+                    -90 <= point[0] <= 90 and -180 <= point[1] <= 180):
+                x, y = project(*point)
+                dx = (x - centerX + worldSize / 2) % worldSize - worldSize / 2
+                points.append((200 + dx, 200 + y - centerY))
+        if len(points) > 1:
+            path = 'M' + 'L'.join(f'{x:.2f},{y:.2f}' for x, y in points)
+            content += (f'<path data-role="trail" d="{path}" fill="none" stroke="#00d4ff" '
+                        'stroke-width="2.5" stroke-dasharray="4 5"/>')
+        metersPerPixel = cos(radians(max(-WEB_MERCATOR_MAX_LAT, min(WEB_MERCATOR_MAX_LAT, latitude)))) * 2 * pi * 6378137 / worldSize
+        if _finite(horizontal_error_m) and horizontal_error_m >= 0:
+            radius = horizontal_error_m / (2 * metersPerPixel)
+            content += (f'<circle data-role="gnss-error" cx="200" cy="200" r="{radius:.3f}" '
+                        'fill="#65ddff" fill-opacity=".15" stroke="#65ddff" stroke-width="1.5"/>')
+        if _finite(camera_heading_deg):
+            content += (f'<g data-role="camera" transform="translate(200 200) rotate({camera_heading_deg % 360:.2f})" '
+                        f'stroke="{_CAMERA_COLOR}" stroke-linejoin="round">'
+                        f'<path d="M0 0L-25 -48A54 54 0 0 1 25 -48Z" fill="{_CAMERA_COLOR}" fill-opacity=".16" '
+                        'stroke-width="1.5"/><path d="M0 -10V-46M-4 -40L0 -47L4 -40" stroke-width="1.8"/></g>')
+        if _finite(heading_deg):
+            content += (f'<g data-role="vehicle" transform="translate(200 200) rotate({heading_deg % 360:.2f})">'
+                        f'<circle r="14" fill="{_MAP_BACKGROUND}" stroke="{_ROVER_COLOR}"/>'
+                        f'<path d="M0 -11L8 9L0 5L-8 9Z" fill="{_ROVER_COLOR}" stroke="{_MAP_BACKGROUND}" stroke-width="1.5"/></g>')
+        else:
+            content += f'<circle data-role="position" cx="200" cy="200" r="6" fill="{_ROVER_COLOR}" stroke="{_MAP_BACKGROUND}"/>'
+        label = f'Navigation map, north up. Latitude {latitude:.6f}, longitude {longitude:.6f}.'
+        if abs(latitude) > WEB_MERCATOR_MAX_LAT:
+            label += ' Basemap latitude is limited by Web Mercator.'
+        scaleMeters = max((v for v in (0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000)
+                           if v <= 100 * metersPerPixel), default=0.1)
+        scaleLength = scaleMeters / metersPerPixel
+        content += (f'<g data-role="scale-bar" transform="translate(19 366)" fill="#fff" font-size="10" '
+                    'stroke="#111" paint-order="stroke" stroke-width="3">'
+                    f'<path d="M0 -4V0H{scaleLength:.2f}V-4" fill="none" stroke="#111"/>'
+                    f'<text x="{scaleLength/2:.2f}" y="14" text-anchor="middle">{scaleMeters:g} m</text></g>')
+    else:
+        label = 'Navigation map. GPS position unavailable.'
+        content += ('<text x="200" y="201" fill="#a6ad9a" font-size="11" text-anchor="middle">'
+                    'GPS POSITION UNAVAILABLE</text>')
+    attribution = MAP_ATTRIBUTION["dark"] if valid and layer == "street" and atlasStreet else MAP_ATTRIBUTION[layer]
+    content += ('<g transform="translate(367 27)"><path d="M0 21V-2M-4 5L0 -3L4 5" '
+                'stroke="#fff" stroke-width="2" fill="none"/>'
+                '<text x="0" y="-9" fill="#fff" stroke="#111" stroke-width="3" paint-order="stroke" '
+                'font-size="10" text-anchor="middle">N</text></g>'
+                '<text x="392" y="392" fill="#fff" stroke="#111" stroke-width="3" paint-order="stroke" '
+                f'font-size="9" text-anchor="end">{escape(attribution)}</text>')
     return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" '
             f'aria-label="{escape(label, quote=True)}" font-family="Suisse,Arial,sans-serif">'
             f'<title>{escape(label)}</title>{content}</svg>')

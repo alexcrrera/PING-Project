@@ -6,7 +6,7 @@ import unittest
 from xml.etree import ElementTree as ET
 
 from ping_base.navigation import (JUSSIEU_LAT, JUSSIEU_LON, MAP_ZOOM_LEVELS, METERS_PER_DEGREE,
-                                  campus_map, simulated_position)
+                                  campus_map, simulated_position, world_map)
 
 
 def element(svg, role):
@@ -19,6 +19,61 @@ def transform_numbers(svg, role):
 
 
 class NavigationTests(unittest.TestCase):
+    def test_world_map_uses_coordinates_and_handles_dateline(self):
+        paris = world_map(48.846, 2.35, 90, 30, trail=((48.845, 2.349), (48.846, 2.35)))
+        sydney = world_map(-33.8688, 151.2093, 0, None)
+        self.assertIn('tile.openstreetmap.org/17/', paris)
+        self.assertIn('Latitude -33.868800, longitude 151.209300', sydney)
+        self.assertNotEqual(element(paris, 'basemap')[0].attrib['href'], element(sydney, 'basemap')[0].attrib['href'])
+        self.assertIsNotNone(element(paris, 'trail'))
+        self.assertEqual(transform_numbers(paris, 'vehicle')[-1], 90)
+        wrapped = world_map(0, 180, None, None, trail=((0, 179.999), (0, -179.999)))
+        self.assertIsNotNone(element(wrapped, 'trail'))
+        for zoom in MAP_ZOOM_LEVELS:
+            self.assertIn('tile.openstreetmap.org/', world_map(48, 2, 0, 0, zoom=zoom))
+
+    def test_map_layers_have_distinct_tiles_and_attribution(self):
+        for layer, provider, attribution in (("street", "tile.openstreetmap.org", "OpenStreetMap"),
+                                             ("dark", "tile.thunderforest.com", "Thunderforest"),
+                                             ("satellite", "api.maptiler.com", "MapTiler")):
+            with self.subTest(layer=layer):
+                svg = world_map(48, 2, 0, 0, layer=layer)
+                self.assertIn(provider, svg)
+                self.assertIn(attribution, svg)
+        with self.assertRaises(ValueError):
+            world_map(48, 2, 0, 0, layer="invalid")
+
+    def test_highest_street_zoom_overzooms_existing_tiles(self):
+        svg = world_map(48.827305, 2.380116, 0, 0, zoom=8)
+        tiles = list(element(svg, 'basemap'))
+        self.assertTrue(tiles)
+        self.assertTrue(all('/19/' in tile.attrib['href'] for tile in tiles))
+        self.assertTrue(all(tile.attrib['width'] == '512' for tile in tiles))
+
+    def test_highest_street_zoom_uses_native_tiles_when_key_available(self):
+        svg = world_map(48.827305, 2.380116, 0, 0, zoom=8, thunderforest_key="sample")
+        tiles = list(element(svg, 'basemap'))
+        self.assertTrue(tiles)
+        self.assertTrue(all('tile.thunderforest.com/atlas/20/' in tile.attrib['href'] for tile in tiles))
+        self.assertTrue(all(tile.attrib['width'] == '256' for tile in tiles))
+        self.assertIn('Thunderforest', svg)
+
+    def test_error_circle_diameter_matches_horizontal_error(self):
+        svg = world_map(0, 0, 0, 0, zoom=1, horizontal_error_m=10)
+        circle = element(svg, 'gnss-error')
+        metersPerPixel = 2 * math.pi * 6378137 / (256 * 2 ** 17)
+        self.assertAlmostEqual(2 * float(circle.attrib['r']) * metersPerPixel, 10, places=2)
+        for invalid in (None, -1, float('nan')):
+            self.assertIsNone(element(world_map(0, 0, 0, 0, horizontal_error_m=invalid), 'gnss-error'))
+
+    def test_world_map_without_fix_has_no_marker_or_tile_requests(self):
+        for lat, lon in ((None, None), (float('nan'), 2), (91, 2), (48, 181)):
+            svg = world_map(lat, lon, 0, 0)
+            self.assertIn('GPS POSITION UNAVAILABLE', svg)
+            self.assertNotIn('tile.openstreetmap.org', svg)
+            self.assertIsNone(element(svg, 'vehicle'))
+            self.assertIsNone(element(svg, 'camera'))
+
     def test_origin_is_the_published_jussieu_coordinate(self):
         position = simulated_position(0, 0)
         self.assertEqual(position.lat_deg, JUSSIEU_LAT)

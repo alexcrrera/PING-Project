@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from html import escape
 import math
+import json
 from pathlib import Path
 import time
 from typing import Literal
@@ -19,8 +20,8 @@ from .camera_filters import CameraFilterSettings, CameraFrameProcessor, FILTER_L
 from .gimbal import GimbalPose, StabilizationMode
 from .hud import gimbal_indicator, heading_tape, range_readout
 from .keyboard import KEYBOARD_SCRIPT
-from .navigation import MAP_ZOOM_LEVELS, campus_map, simulated_position
-from .preferences import loadPort, savePort
+from .navigation import GeoPosition, MAP_LAYERS, MAP_ZOOM_LEVELS, simulated_position, world_map
+from .preferences import loadMapKeys, loadPort, savePort
 from .orientation import heading_indicator, pitch_indicator, roll_indicator, wheel_slip_indicator
 from .rover import RoverView
 from .station import BaseStation
@@ -197,9 +198,14 @@ class Dashboard:
         self._log_cursor = 0
         self._last_navigation: tuple | None = None
         self._navigation_trail: list[tuple[float, float]] = []
+        self._navigation_simulated: bool | None = None
         self.map_expanded = False
         self.map_zoom_index = MAP_ZOOM_LEVELS.index(1)
         self.map_zoom_controls = []
+        self.map_layer = "street"
+        self.thunderforest_key, self.maptiler_key = loadMapKeys()
+        self.map_layer_controls = []
+        self._map_content = world_map(None, None, None, None)
         self._map_toggle_sequence = station.map_toggle_sequence
         self._controller_action_sequence = station.controller_action_sequence
         self.camera_zoom_index = 0
@@ -347,33 +353,45 @@ class Dashboard:
                     self._camera_filter_controls()
             with ui.element("div").classes("navigation-panel"):
                 with ui.element("div").classes("navigation-head"):
-                    ui.label("JUSSIEU / LOCAL MAP").classes("eyebrow")
+                    ui.label("NAVIGATION / MAP").classes("eyebrow")
                     ui.button("M", icon="open_in_full", on_click=self.toggle_map).props('flat dense no-caps aria-label="Expand map (M or DualShock touchpad)"')
                 with ui.element("div").classes("map-viewport map-mini-viewport") as mini_viewport:
-                    self.map_mini = ui.html(campus_map(None, None, None, None), sanitize=False).classes("map-mini").props('role="button" tabindex="0" aria-label="Open Jussieu map"').on("click", self.toggle_map).on("keydown.enter", self.toggle_map).on("keydown.space.prevent", self.toggle_map)
+                    self.map_mini = ui.html(world_map(None, None, None, None), sanitize=False).classes("map-mini").props('role="button" tabindex="0" aria-label="Open navigation map"').on("click", self.toggle_map).on("keydown.enter", self.toggle_map).on("keydown.space.prevent", self.toggle_map)
                     self._map_zoom_buttons()
+                    self._map_layer_button()
                 self._map_wheel_events(mini_viewport)
                 self._label("map_gps", "GPS —", "navigation-coordinates")
-                self._label("map_state", "SIMULATED GPS / WAITING", "navigation-state")
+                self._label("map_state", "GPS / WAITING", "navigation-state")
+                self._navigation_metrics("map")
 
     def _expanded_map(self) -> None:
         # Keep the map under the fullscreen camera root so M works in fullscreen.
-        with ui.element("div").classes("map-overlay").props('role="dialog" aria-modal="true" aria-label="Jussieu navigation map"') as self.map_overlay:
+        with ui.element("div").classes("map-overlay").props('role="dialog" aria-modal="true" aria-label="Navigation map"') as self.map_overlay:
             with ui.element("section").classes("map-expanded-card"):
                 with ui.element("div").classes("map-expanded-head"):
                     with ui.element("div"):
-                        ui.label("JUSSIEU / PARIS").classes("panel-title")
-                        ui.label("NORTH UP · SIMULATED GPS").classes("subtext")
+                        ui.label("NAVIGATION MAP").classes("panel-title")
+                        ui.label("NORTH UP · GPS").classes("subtext")
                     ui.button("M / ESC", icon="close", on_click=self.close_map).props('flat dense no-caps aria-label="Close map (M, Escape or DualShock touchpad)"')
                 with ui.element("div").classes("map-viewport map-large-viewport") as large_viewport:
-                    self.map_large = ui.html(campus_map(None, None, None, None), sanitize=False).classes("map-large")
+                    self.map_large = ui.html(world_map(None, None, None, None), sanitize=False).classes("map-large")
                     self._map_zoom_buttons()
+                    self._map_layer_button()
                 self._map_wheel_events(large_viewport)
                 with ui.element("div").classes("map-expanded-footer"):
                     self._label("map_large_gps", "GPS —", "navigation-coordinates")
+                    self._navigation_metrics("map_large")
                     ui.label("WHITE · ROVER   AMBER · CAMERA").classes("subtext")
                     ui.link("© OpenStreetMap contributors", "https://www.openstreetmap.org/copyright", new_tab=True).classes("subtext")
         self.map_overlay.set_visibility(False)
+
+    def _navigation_metrics(self, prefix: str) -> None:
+        with ui.element("div").classes("navigation-metrics"):
+            for key, title in (("sats", "SATELLITES"), ("error", "HORIZONTAL ERROR"),
+                               ("speed_error", "VELOCITY ERROR"), ("tracking", "MAP TRACKING")):
+                with ui.element("div").classes("navigation-metric"):
+                    ui.label(title).classes("navigation-metric-label")
+                    self._label(f"{prefix}_{key}", "-", "navigation-metric-value")
 
     def _map_zoom_buttons(self) -> None:
         with ui.element("div").classes("map-zoom-controls").props('role="group" aria-label="Map zoom controls"'):
@@ -381,6 +399,60 @@ class Dashboard:
             reset = ui.button("1×", on_click=self.reset_map_zoom).props('flat dense no-caps aria-label="Reset map zoom to 1×"').tooltip("Reset map zoom")
             zoom_in = ui.button(icon="add", on_click=lambda: self.zoom_map(1)).props('flat dense aria-label="Zoom map in"')
         self.map_zoom_controls.append((zoom_out, reset, zoom_in))
+
+    def _map_layer_button(self) -> None:
+        with ui.element("div").classes("map-layer-controls"):
+            button = ui.button("STREET", icon="layers", on_click=self.cycle_map_layer).props(
+                'flat dense no-caps aria-label="Change map layer"').tooltip("Change map layer")
+        self.map_layer_controls.append(button)
+
+    def cycle_map_layer(self) -> None:
+        self.map_layer = MAP_LAYERS[(MAP_LAYERS.index(self.map_layer) + 1) % len(MAP_LAYERS)]
+        for button in self.map_layer_controls:
+            button.set_text(self.map_layer.upper())
+        self.refresh()
+
+    @staticmethod
+    def _update_map_element(element, content: str) -> None:
+        # Keep existing image nodes alive while updating positions and overlays.
+        # Replacing the complete SVG on each GPS or heading update flashes tiles.
+        script = r"""(function(id, markup) {
+          const host = getHtmlElement(id);
+          if (!host) return;
+          const current = host.querySelector('svg');
+          const parsed = new DOMParser().parseFromString(markup, 'image/svg+xml').documentElement;
+          if (!current || parsed.nodeName === 'parsererror') return;
+          current.setAttribute('aria-label', parsed.getAttribute('aria-label'));
+          const oldBase = current.querySelector('[data-role="basemap"]');
+          const newBase = parsed.querySelector('[data-role="basemap"]');
+          if (!oldBase || !newBase) {
+            current.replaceChildren(...Array.from(parsed.children));
+            return;
+          }
+          const images = new Map(Array.from(oldBase.children, image => [image.getAttribute('href'), image]));
+          for (const next of Array.from(newBase.children)) {
+            const key = next.getAttribute('href');
+            const image = images.get(key);
+            if (image) {
+              image.setAttribute('x', next.getAttribute('x'));
+              image.setAttribute('y', next.getAttribute('y'));
+              images.delete(key);
+            } else {
+              oldBase.appendChild(next);
+            }
+          }
+          for (const image of images.values()) image.remove();
+          for (const child of Array.from(current.children)) {
+            if (child !== oldBase) child.remove();
+          }
+          let beforeBase = true;
+          for (const child of Array.from(parsed.children)) {
+            if (child === newBase) { beforeBase = false; continue; }
+            if (beforeBase) current.insertBefore(child, oldBase);
+            else current.appendChild(child);
+          }
+        })(%s, %s)""" % (json.dumps(element.id), json.dumps(content))
+        ui.run_javascript(script)
 
     def _map_wheel_events(self, viewport) -> None:
         viewport.on("wheel", self._map_wheel, throttle=.12, trailing_events=False,
@@ -807,7 +879,7 @@ class Dashboard:
         self.map_expanded = expanded
         self.map_overlay.set_visibility(expanded)
         if expanded:
-            self.map_large.set_content(self.map_mini.content)
+            self._update_map_element(self.map_large, self._map_content)
             self._release_inputs()
 
     def toggle_map(self) -> None:
@@ -843,30 +915,63 @@ class Dashboard:
         if isinstance(delta, (int, float)) and not isinstance(delta, bool) and math.isfinite(delta) and delta:
             self.zoom_map(1 if delta < 0 else -1)
 
-    def _refresh_navigation(self, motion, *, available: bool, simulated: bool,
+    def _refresh_navigation(self, motion, sample, *, simulated: bool,
                             camera_heading: float | None) -> None:
-        position = simulated_position(motion.x_m, motion.y_m) if available else None
+        if self._navigation_simulated != simulated:
+            self._navigation_trail.clear()
+            self._navigation_simulated = simulated
+        if simulated and sample is not None:
+            position = simulated_position(motion.x_m, motion.y_m)
+            heading = motion.heading_deg
+        else:
+            lat = getattr(sample, "latitude_deg", None)
+            lon = getattr(sample, "longitude_deg", None)
+            position = GeoPosition(lat, lon) if (isinstance(lat, (int, float)) and not isinstance(lat, bool)
+                       and isinstance(lon, (int, float)) and not isinstance(lon, bool)
+                       and math.isfinite(lat) and math.isfinite(lon)
+                       and -90 <= lat <= 90 and -180 <= lon <= 180) else None
+            heading = getattr(sample, "heading_deg", None)
         coordinates = (f"{abs(position.lat_deg):.6f}° {'N' if position.lat_deg >= 0 else 'S'}  "
-                       f"{abs(position.lon_deg):.6f}° {'E' if position.lon_deg >= 0 else 'W'}") if position else "GPS —"
-        self._text("overlay_gps", f"SIM GPS · {coordinates}" if position else "GPS —")
+                       f"{abs(position.lon_deg):.6f}° {'E' if position.lon_deg >= 0 else 'W'}") if position else "GPS -"
+        self._text("overlay_gps", ("SIM GPS · " if simulated else "GPS · ") + coordinates if position else "GPS -")
         self._text("map_gps", coordinates)
         self._text("map_large_gps", coordinates)
-        self._text("map_state", "SIMULATED GPS · M / TOUCHPAD EXPAND" if available else
-                   "SIMULATED GPS / NO FRESH FIX" if simulated else "GPS UNAVAILABLE / USB TELEMETRY")
-        if available:
-            point = (round(motion.x_m, 1), round(motion.y_m, 1))
-            if not self._navigation_trail or math.dist(point, self._navigation_trail[-1]) >= 1:
+        self._text("map_state", ("SIMULATED GPS" if simulated else "GNSS FIX") if position else
+                   "SIMULATED GPS / NO FRESH FIX" if simulated else "GPS UNAVAILABLE / NO FRESH FIX")
+        sats = getattr(sample, "gnss_num_sats", None) if not simulated else None
+        horizontal = getattr(sample, "gnss_horizontal_uncertainty_m", None) if position and not simulated else None
+        velocityError = getattr(sample, "gnss_velocity_uncertainty_mps", None) if position and not simulated else None
+        metricValues = {
+            "sats": str(sats) if sats is not None else "-",
+            "error": f"{horizontal:.2f} m" if horizontal is not None else "-",
+            "speed_error": f"{velocityError:.2f} m/s" if velocityError is not None else "-",
+            "tracking": "FOLLOW" if position else "WAITING",
+        }
+        for prefix in ("map", "map_large"):
+            for name, value in metricValues.items():
+                self._text(f"{prefix}_{name}", value)
+        if position:
+            point = (position.lat_deg, position.lon_deg)
+            if not self._navigation_trail or point != self._navigation_trail[-1]:
                 self._navigation_trail.append(point)
-                self._navigation_trail = self._navigation_trail[-300:]
-        values = (round(motion.x_m, 1), round(motion.y_m, 1), round(motion.heading_deg, 1),
-                  round(camera_heading, 1) if camera_heading is not None else None) if available else (None,) * 4
+                self._navigation_trail = self._navigation_trail[-256:]
+            values = (round(position.lat_deg, 7), round(position.lon_deg, 7),
+                      round(heading, 1) if heading is not None and math.isfinite(heading) else None,
+                      round(camera_heading, 1) if camera_heading is not None else None)
+        else:
+            self._navigation_trail.clear()
+            values = (None,) * 4
         zoom = MAP_ZOOM_LEVELS[self.map_zoom_index]
-        navigation = (*values, zoom, tuple(self._navigation_trail))
+        horizontalError = getattr(sample, "gnss_horizontal_uncertainty_m", None) if position else None
+        navigation = (*values, zoom, self.map_layer, horizontalError, tuple(self._navigation_trail))
         if navigation != self._last_navigation:
-            content = campus_map(*values, trail=tuple(self._navigation_trail), zoom=zoom)
-            self.map_mini.set_content(content)
+            content = world_map(*values, trail=tuple(self._navigation_trail), zoom=zoom, layer=self.map_layer,
+                                horizontal_error_m=horizontalError, thunderforest_key=self.thunderforest_key,
+                                maptiler_key=self.maptiler_key)
+            self._map_content = content
+            self._update_map_element(self.map_mini, content)
             if self.map_expanded:
-                self.map_large.set_content(content)
+                self._update_map_element(self.map_large, content)
             self._last_navigation = navigation
 
     def refresh(self) -> None:
@@ -1051,8 +1156,7 @@ class Dashboard:
             "YAW LIMIT " + regimeValue("regime_yaw_limit_deg", "°"),
             "OUTPUT " + regimeValue("regime_min_output_percent", "%") + "–" + regimeValue("regime_max_output_percent", "%"))))
         self._text("orientation_camera", f"CAM {round(orientation_camera, 1) % 360:05.1f}°" if orientation_camera is not None else "CAM —")
-        self._refresh_navigation(motion, available=sample is not None and simulated,
-                                 simulated=simulated, camera_heading=orientation_camera)
+        self._refresh_navigation(motion, sample, simulated=simulated, camera_heading=orientation_camera)
         self.battery_fill.style(f"width:{getattr(sample, 'battery_percent', None) or 0:.1f}%")
         wheels = sample.wheel_slip if sample else None
         red_at = int(self.slip_threshold.value)

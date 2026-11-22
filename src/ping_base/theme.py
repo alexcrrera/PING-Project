@@ -38,7 +38,7 @@ button:focus-visible, a:focus-visible { outline:1px solid var(--accent)!importan
 .intro h1 { font-size:23px; font-weight:300; line-height:1.15; letter-spacing:-.035em; }
 .intro p { color:var(--muted); margin-top:4px; font-size:11px; }
 .intro-right { display:flex; gap:14px; align-items:center; }
-.layout { --side-width:284px; display:grid; grid-template-columns:var(--side-width) minmax(0,1fr) var(--side-width); grid-template-areas:"controls visuals telemetry"; gap:16px; align-items:start; }
+.layout { --side-width:284px; --tools-width:340px; display:grid; grid-template-columns:var(--tools-width) minmax(0,1fr) var(--side-width); grid-template-areas:"controls visuals telemetry"; gap:16px; align-items:start; }
 .telemetry-monitor { display:none; min-width:0; min-height:0; }
 .telemetry-monitor:target { display:flex; flex-direction:column; gap:16px; overflow:auto; }
 .workspace:has(.telemetry-monitor:target)>.layout { display:none; }
@@ -67,17 +67,26 @@ button:focus-visible, a:focus-visible { outline:1px solid var(--accent)!importan
 .navigation-head { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; }
 .navigation-head .eyebrow { color:#c7ccb5; font-size:9px; }
 .navigation-head .q-btn { min-height:24px; padding:2px 5px; color:var(--text); font-size:9px; }
-.map-mini { display:block; width:100%; max-width:300px; aspect-ratio:1; margin:0 auto; border:1px solid #6b74514d; background:#10150f; overflow:hidden; cursor:zoom-in; }
+.map-mini { display:block; width:100%; max-width:340px; aspect-ratio:1; margin:0 auto; border:1px solid #6b74514d; background:#10150f; overflow:hidden; cursor:zoom-in; }
 .map-mini:focus-visible { outline:1px solid #d2d6b9; outline-offset:3px; }
 .map-viewport { position:relative; margin:0 auto; }
-.map-mini-viewport { width:100%; max-width:300px; }
+.map-mini-viewport { width:100%; max-width:340px; }
 .map-zoom-controls { position:absolute; top:8px; left:8px; z-index:2; display:flex; align-items:center; background:#10170ff0; border:1px solid #88947499; box-shadow:0 2px 8px #0005; }
 .map-zoom-controls .q-btn { min-width:26px; min-height:26px; padding:3px 5px; color:#edf0df; font-size:10px; }
 .map-zoom-controls .q-btn .q-icon { font-size:16px; }
 .map-zoom-controls .q-btn+.q-btn { border-left:1px solid #59634c; }
+.map-layer-controls { position:absolute; top:8px; right:8px; z-index:2; background:#10170ff0; border:1px solid #88947499; }
+.map-layer-controls .q-btn { min-height:26px; padding:3px 5px; color:#edf0df; font-size:9px; }
+.map-layer-controls .q-icon { font-size:14px; }
 .map-mini>svg, .map-large>svg { display:block; width:100%; height:100%; }
 .navigation-coordinates { color:#eceee0; font-size:10px; font-variant-numeric:tabular-nums; line-height:1.5; margin-top:6px; white-space:nowrap; }
 .navigation-state { color:#a9b096; font-size:8px; line-height:1.4; letter-spacing:.07em; }
+.navigation-metrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:5px 10px; margin-top:7px; width:100%; }
+.navigation-metric { min-width:0; display:flex; align-items:baseline; justify-content:space-between; gap:5px; }
+.navigation-metric-label { color:#969f89; font-size:8px; letter-spacing:.05em; }
+.navigation-metric-value { color:#e7eadc; font-size:10px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.map-expanded-footer .navigation-metrics { flex-basis:100%; grid-template-columns:repeat(4,minmax(0,1fr)); }
+@media(max-width:600px) { .map-expanded-footer .navigation-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 .map-overlay { position:fixed; inset:0; z-index:8000; display:flex; align-items:center; justify-content:center; padding:16px; background:#080c0bea; backdrop-filter:blur(5px); overflow:auto; }
 .map-overlay.hidden, .map-overlay[hidden] { display:none!important; }
 .map-expanded-card { width:min(860px,94vw); max-height:calc(100dvh - 32px); padding:14px; border:1px solid #6b7451; border-radius:2px; background:#151a14; box-shadow:0 20px 80px #0009; overflow:auto; }
@@ -281,7 +290,7 @@ button:focus-visible, a:focus-visible { outline:1px solid var(--accent)!importan
     .footer-status { min-width:0; }
     .footer-status>.nicegui-label { overflow:hidden; text-overflow:ellipsis; }
 }
-@media(min-width:1700px) { .layout { --side-width:310px; } .workspace { padding-left:28px; padding-right:28px; } }
+@media(min-width:1700px) { .layout { --side-width:310px; --tools-width:360px; } .workspace { padding-left:28px; padding-right:28px; } }
 @media(min-width:1101px) and (max-height:850px) and (min-height:660px) {
     .workspace { padding-top:10px; padding-bottom:8px; grid-template-rows:minmax(0,1fr) 14px; row-gap:8px; }
     .intro h1 { font-size:21px; }

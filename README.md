@@ -106,13 +106,15 @@ these panels below the camera, with scrolling so controls remain accessible.
   map. The virtual rover starts around **48.845864° N, 2.356737° E**, using
   [Sorbonne's published Jussieu campus location](https://guideetudiant.sorbonne-universite.fr/vos-campus).
   Local east/north motion updates the coordinates and map marker together.
-  GPS is currently simulated; the physical telemetry protocol has no GPS fields.
-- The square **Jussieu / local map** remains north-up, with a white rover,
-  an independent amber camera direction and a recent travel trail. Buildings,
-  streets and paths use a bundled local [OpenStreetMap](https://www.openstreetmap.org/copyright)
-  extract, so the map works offline. The map pans as the rover travels; outside
-  the cached campus area it keeps the actual position and labels the coverage
-  limit. Stale telemetry or unavailable GPS clears the live marker/readouts.
+  Live telemetry uses the GNSS latitude and longitude from the GPD group.
+- The north-up **navigation map** follows the live or simulated GPS position,
+  showing rover heading, camera direction and recent trail when available.
+  OpenStreetMap tiles require an internet connection in the browser; GPS and
+  the marker remain available without tiles. Stale telemetry or an unavailable
+  fix clears the live marker and coordinates. Use the layer button to cycle
+  between street, dark and satellite views. The dark and satellite providers use
+  local API keys stored in `.ping-preferences.json`. The GNSS error circle uses
+  the reported mean horizontal uncertainty as its diameter.
 - Use the map's **− / +** buttons or scroll over either map to zoom from
   **0.5× to 8×**. Click the zoom value to reset to **1×**. The mini and expanded
   views share the same zoom, with an accurate scale bar and north kept up.

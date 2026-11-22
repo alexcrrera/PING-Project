@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock, patch
 
 from ping_base.dashboard import CAMERA_ZOOM_LEVELS, Dashboard
 from ping_base.gimbal import GimbalPose
@@ -19,6 +19,11 @@ class DashboardControlTests(unittest.TestCase):
         self.page.map_zoom_index = MAP_ZOOM_LEVELS.index(1)
         self.page.map_zoom_controls = [(Mock(), Mock(), Mock())]
         self.page.refresh = Mock()
+        self.page.map_layer = "street"
+        self.page.thunderforest_key = "test-dark"
+        self.page.maptiler_key = "test-satellite"
+        self.page.map_layer_controls = [Mock()]
+        self.page._update_map_element = Mock()
 
     def test_directional_camera_zoom_clamps_and_q_still_cycles(self):
         self.page.step_camera_zoom(-1)
@@ -48,6 +53,58 @@ class DashboardControlTests(unittest.TestCase):
             reset.set_text.assert_called_with(f"{MAP_ZOOM_LEVELS[0]:g}×")
         self.page.cycle_map_zoom()
         self.assertEqual(self.page.map_zoom_index, 1)
+
+    def test_map_layer_control_cycles_and_syncs_buttons(self):
+        self.page.map_layer_controls.append(Mock())
+        for expected in ("dark", "satellite", "street"):
+            self.page.cycle_map_layer()
+            self.assertEqual(self.page.map_layer, expected)
+            for button in self.page.map_layer_controls:
+                button.set_text.assert_called_with(expected.upper())
+
+    def test_expanded_map_registers_all_navigation_metrics(self):
+        self.page.values = {}
+        self.page._label = Mock(side_effect=lambda key, *args: self.page.values.update({key: Mock()}))
+        self.page._map_zoom_buttons = Mock()
+        self.page._map_layer_button = Mock()
+        self.page._map_wheel_events = Mock()
+        with patch("ping_base.dashboard.ui") as uiMock:
+            uiMock.element.return_value.classes.return_value.props.return_value = MagicMock()
+            uiMock.element.return_value.classes.return_value = MagicMock()
+            uiMock.html.return_value.classes.return_value = MagicMock()
+            self.page._expanded_map()
+        for suffix in ("sats", "error", "speed_error", "tracking"):
+            self.assertIn("map_large_" + suffix, self.page.values)
+
+    def test_navigation_uses_live_gnss_and_clears_stale_fix(self):
+        self.page._navigation_trail = []
+        self.page._navigation_simulated = None
+        self.page._last_navigation = None
+        self.page.map_mini = Mock()
+        self.page.map_large = Mock()
+        self.page.map_expanded = True
+        motion = SimpleNamespace(x_m=0, y_m=0, heading_deg=0)
+        sample = RoverTelemetrySample(received_at=0, latitude_deg=-33.8688,
+                                      longitude_deg=151.2093, heading_deg=90,
+                                      gnss_horizontal_uncertainty_m=10, gnss_num_sats=12,
+                                      gnss_velocity_uncertainty_mps=0.14)
+        self.page._refresh_navigation(motion, sample, simulated=False, camera_heading=120)
+        content = self.page._update_map_element.call_args_list[-2].args[1]
+        self.assertIn('Latitude -33.868800, longitude 151.209300', content)
+        self.assertIn('rotate(90.00)', content)
+        self.assertIn('data-role="gnss-error"', content)
+        self.page._text.assert_any_call("map_sats", "12")
+        self.page._text.assert_any_call("map_error", "10.00 m")
+        self.page._text.assert_any_call("map_speed_error", "0.14 m/s")
+        self.page._text.assert_any_call("map_tracking", "FOLLOW")
+        self.assertEqual(self.page._navigation_trail, [(-33.8688, 151.2093)])
+        self.page._refresh_navigation(motion, None, simulated=False, camera_heading=None)
+        content = self.page._update_map_element.call_args_list[-2].args[1]
+        self.assertIn('GPS POSITION UNAVAILABLE', content)
+        self.assertNotIn('data-role="vehicle"', content)
+        self.assertEqual(self.page._navigation_trail, [])
+        self.page._text.assert_any_call("map_sats", "-")
+        self.page._text.assert_any_call("map_tracking", "WAITING")
 
     def test_rover_camera_uses_body_frame_for_live_telemetry(self):
         virtualPose = GimbalPose(5, 10, 15)

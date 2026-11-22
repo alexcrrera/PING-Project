@@ -135,8 +135,8 @@ void VN300::manage_incoming_data(){
         {
             incomingData[dataIndex] = '\0';
 
-            Serial.print("VN300 incoming data: " );
-            Serial.println(incomingData);
+            //Serial.print("VN300 incoming data: " );
+            //Serial.println(incomingData);
             process_data();
 
             dataIndex = 0;

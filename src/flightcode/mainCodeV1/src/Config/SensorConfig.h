@@ -55,9 +55,9 @@ namespace SensorConfig {
 
     constexpr float INS_Solution_LLA_poll_frequency = 20.0f; // Hz
     constexpr float YPR_LinearAccel_Gyro_poll_frequency = 0.0001f; // Hz
-    constexpr float GNSS_Solution_LLA_poll_frequency = 5.0f; // Hz
+    constexpr float GNSS_Solution_LLA_poll_frequency = 10.0f; // Hz
 
-    constexpr float YBA_LinearAccel_Gyro_poll_frequency = 2.0f; // Hz
+    constexpr float YBA_LinearAccel_Gyro_poll_frequency = 200.0f; // Hz
 
     constexpr bool enable_INS_Solution_LLA_polling = false;
     constexpr bool enable_YPR_LinearAccel_Gyro_polling = false;
