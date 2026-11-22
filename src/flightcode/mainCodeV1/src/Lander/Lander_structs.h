@@ -98,9 +98,13 @@ struct GPD{
     static constexpr const GroupConfig& config = CommsConfig::GPD;
 
     bool isValid = false;
-    float latitude_deg = 0.0f;
-    float longitude_deg = 0.0f;
-    float altitude_MSL_m = 0.0f;
+    uint8_t numSats = 0;
+    double latitude_deg = 0.0;
+    double longitude_deg = 0.0;
+    double altitude_ellipsoid_m = 0.0;
+    float velN = 0.0f, velE = 0.0f, velD = 0.0f;
+    float horizontalUncertainty_m = 0.0f;
+    float velocityUncertainty_mps = 0.0f;
 };
 
 struct ATVL{

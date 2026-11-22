@@ -76,7 +76,6 @@ struct GNSS_Solution_LLA {
     uint16_t GpsWeek = 0;
     uint8_t GnssFix = 0;
     uint8_t NumSats = 0;
-    uint8_t Pad[4] = {0, 0, 0, 0};
     double Lat = 0.0;
     double Lon = 0.0;
     double Alt = 0.0;
@@ -98,6 +97,10 @@ struct VN300Measurement
     YPR_LinearAccel_Gyro yprLinearAccelGyro;
     GNSS_Solution_LLA gnssSolution;
     YBA_LinearAccel_Gyro ybaLinearAccelGyro;
+    bool gnssReceived = false;
+    bool attitudeReceived = false;
+    uint32_t gnssReceivedAtMs = 0;
+    uint32_t attitudeReceivedAtMs = 0;
 };
 
 

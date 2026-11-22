@@ -1,4 +1,5 @@
 #include "StateEstimator.h"
+#include <math.h>
 
 
 #include "StateEstimator.h"
@@ -37,6 +38,18 @@ void StateEstimator::update(SensorMeasurements& sensorMeasurements)
 void StateEstimator::updateStructs(LanderState& state, const SensorMeasurements& sensorMeasurements)
 {
 
+
+    const auto& vn = sensorMeasurements.vn300_data;
+    const auto& gnss = vn.gnssSolution;
+    auto& gpd = state.group_GPS_data;
+    gpd.isValid = vn.gnssReceived && (millis() - vn.gnssReceivedAtMs < 2000) && gnss.GnssFix >= 3;
+    gpd.numSats = gnss.NumSats;
+    gpd.latitude_deg = gnss.Lat;
+    gpd.longitude_deg = gnss.Lon;
+    gpd.altitude_ellipsoid_m = gnss.Alt;
+    gpd.velN = gnss.VelN; gpd.velE = gnss.VelE; gpd.velD = gnss.VelD;
+    gpd.horizontalUncertainty_m = (gnss.PosUncertaintyN + gnss.PosUncertaintyE) * 0.5f;
+    gpd.velocityUncertainty_mps = gnss.GnssVelUncertainty;
 
     // ACCL
     state.group_ACCL_data.BODY_linear_acceleration_X_SI = state.acceleration.X_SI;
@@ -101,12 +114,31 @@ void StateEstimator::estimateAcceleration_BODY(LanderState& state, const SensorM
 
 void StateEstimator::estimateVelocity_BODY(LanderState& state, const SensorMeasurements& sensorMeasurements)
 {
-   // use optical flow data to estimate velocity in body frame, its labeled NORTH and EAST but it is actually BODY X and Y
-
-   
-   state.velocity.X_SI = sensorMeasurements.opticalFlow_data.velocity_North_SI; // Forward velocity
-    state.velocity.Y_SI = sensorMeasurements.opticalFlow_data.velocity_East_SI; // Right velocity
-    state.validity.velocityValid = true; // Assuming velocity is valid if VN300 data is available
+    const auto& vn = sensorMeasurements.vn300_data;
+    const auto& gnss = vn.gnssSolution;
+    const auto& imu = vn.ybaLinearAccelGyro;
+    // NED to VectorNav body (forward, right, down), then to PING body
+    // (right, forward, up). Use true yaw, never the display yaw offset.
+    if (!vn.gnssReceived || !vn.attitudeReceived || gnss.GnssFix < 3 ||
+        millis() - vn.gnssReceivedAtMs >= 2000 || millis() - vn.attitudeReceivedAtMs >= 2000)
+    {
+        state.velocity = BODY_coordinates{};
+        state.validity.velocityValid = false;
+        return;
+    }
+    const float yaw = Utilities::degToRad(imu.Yaw);
+    const float pitch = Utilities::degToRad(imu.Pitch);
+    const float roll = Utilities::degToRad(imu.Roll);
+    const float cy = cosf(yaw), sy = sinf(yaw);
+    const float cp = cosf(pitch), sp = sinf(pitch);
+    const float cr = cosf(roll), sr = sinf(roll);
+    const float forward = cp*cy*gnss.VelN + cp*sy*gnss.VelE - sp*gnss.VelD;
+    const float right = (sr*sp*cy-cr*sy)*gnss.VelN + (sr*sp*sy+cr*cy)*gnss.VelE + sr*cp*gnss.VelD;
+    const float down = (cr*sp*cy+sr*sy)*gnss.VelN + (cr*sp*sy-sr*cy)*gnss.VelE + cr*cp*gnss.VelD;
+    state.velocity.X_SI = right;
+    state.velocity.Y_SI = forward;
+    state.velocity.Z_SI = -down;
+    state.validity.velocityValid = true;
 }
 
 

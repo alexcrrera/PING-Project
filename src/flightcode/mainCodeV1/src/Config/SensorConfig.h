@@ -54,10 +54,15 @@ namespace SensorConfig {
     };
 
     constexpr float INS_Solution_LLA_poll_frequency = 20.0f; // Hz
-    constexpr float YPR_LinearAccel_Gyro_poll_frequency = 100.0f; // Hz
+    constexpr float YPR_LinearAccel_Gyro_poll_frequency = 0.0001f; // Hz
     constexpr float GNSS_Solution_LLA_poll_frequency = 5.0f; // Hz
 
-    constexpr float YBA_LinearAccel_Gyro_poll_frequency = 100.0f; // Hz
+    constexpr float YBA_LinearAccel_Gyro_poll_frequency = 2.0f; // Hz
+
+    constexpr bool enable_INS_Solution_LLA_polling = false;
+    constexpr bool enable_YPR_LinearAccel_Gyro_polling = false;
+    constexpr bool enable_GNSS_Solution_LLA_polling = true;
+    constexpr bool enable_YBA_LinearAccel_Gyro_polling = true;
 
 
     constexpr I2CSensorConfig LIDAR = {

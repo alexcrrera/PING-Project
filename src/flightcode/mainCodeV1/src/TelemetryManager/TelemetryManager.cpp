@@ -42,9 +42,15 @@ namespace
     {
         const auto& data = state.group_GPS_data;
         addTelemetryField(payload, static_cast<int>(data.isValid));
-        addTelemetryField(payload, data.latitude_deg, 6);
-        addTelemetryField(payload, data.longitude_deg, 6);
-        addTelemetryField(payload, data.altitude_MSL_m, 2);
+        addTelemetryField(payload, data.numSats);
+        addTelemetryField(payload, data.latitude_deg, 7);
+        addTelemetryField(payload, data.longitude_deg, 7);
+        addTelemetryField(payload, data.altitude_ellipsoid_m, 2);
+        addTelemetryField(payload, data.velN, 3);
+        addTelemetryField(payload, data.velE, 3);
+        addTelemetryField(payload, data.velD, 3);
+        addTelemetryField(payload, data.horizontalUncertainty_m, 2);
+        addTelemetryField(payload, data.velocityUncertainty_mps, 2);
     }
 
     void appendGMBLFields(String& payload, const LanderState& state)

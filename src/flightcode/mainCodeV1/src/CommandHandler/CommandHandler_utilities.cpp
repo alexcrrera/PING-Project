@@ -107,7 +107,7 @@
         return;
     }
 
-    if (header == "GIMBAL_AIM")
+    if (header == "GIMBAL_AIM" || header == "GIMBAL_NUDGE")
     {
         const char* input = payload.c_str();
         char* end = nullptr;
@@ -119,6 +119,12 @@
         }
         input = end + 1;
         float tilt = strtof(input, &end);
+        if (header == "GIMBAL_NUDGE" && isfinite(pan) && isfinite(tilt))
+        {
+            auto& gimbal = flight_manager->getGimbal();
+            pan += gimbal.getPan_deg();
+            tilt += gimbal.getTilt_deg();
+        }
         if (end == input || *end != '\0' || !isfinite(pan) || !isfinite(tilt) ||
             !flight_manager->getGimbal().setAngles(pan, tilt))
             setErrorFeedback("Invalid gimbal angles");

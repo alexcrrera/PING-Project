@@ -38,6 +38,11 @@ class TelemetrySample:
 class RoverTelemetrySample(TelemetrySample):
     """Latest available fields from independent rover serial groups."""
 
+    gnss_num_sats: int | None = None
+    gnss_velocity_ned_mps: tuple[float, float, float] | None = None
+    gnss_horizontal_uncertainty_m: float | None = None
+    gnss_velocity_uncertainty_mps: float | None = None
+    gnss_valid: bool | None = None
     velocity_body_mps: tuple[float, float] | None = None
     acceleration_mps2: tuple[float, float, float] | None = None
     longitude_deg: float | None = None

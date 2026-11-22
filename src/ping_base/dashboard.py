@@ -67,6 +67,9 @@ GROUP_FIELDS = {
     ("WSST", 8): tuple(f"{wheel} {channel}" for channel in ("RPM", "slip")
                       for wheel in ("FL", "FR", "RL", "RR")),
     ("ACCL", 3): ("Accel X (m/s²)", "Accel Y (m/s²)", "Accel Z (m/s²)"),
+    ("GPD", 10): ("Valid fix", "Satellites", "Latitude (deg)", "Longitude (deg)",
+                   "Ellipsoid altitude (m)", "North velocity (m/s)", "East velocity (m/s)",
+                   "Down velocity (m/s)", "Horizontal uncertainty (m)", "Velocity uncertainty (m/s)"),
     ("GPD", 4): ("Valid fix", "Latitude (°)", "Longitude (°)", "Altitude MSL (m)"),
     ("GMBL", 7): ("Range 1 (m)", "Range 2 (m)", "Validity mask", "Mode",
                   "LiDAR (m)", "Pan (°)", "Tilt (°)"),
@@ -290,6 +293,7 @@ class Dashboard:
                 self.compass = ui.html(heading_tape(None), sanitize=False).classes("camera-compass")
                 self.horizon = ui.html("", sanitize=False).classes("artificial-horizon")
                 self.horizon.set_visibility(False)
+                ui.html('<svg viewBox="0 0 110 83" aria-hidden="true"><path d="M55 15v23 M55 45v23 M28 41.5h23 M59 41.5h23" fill="none" stroke="white" stroke-width="1.5"/><circle cx="55" cy="41.5" r="2" fill="white"/></svg>', sanitize=False).classes("crosshair")
                 with ui.element("div").classes("rangefinder-overlay").props('role="status" aria-label="Camera center rangefinder"'):
                     ui.label("RANGE:").classes("rangefinder-label")
                     self._label("overlay_range", "---- m", "rangefinder-value")
@@ -778,12 +782,20 @@ class Dashboard:
             self.station.gimbal.set_input(self.client.id, payload.get("yaw", 0), payload.get("pitch", 0))
 
     def nudge_gimbal(self, *, yaw: float = 0, pitch: float = 0) -> None:
-        if self.gimbal_available:
+        source = self.station.telemetry.source
+        if type(source) is SerialTelemetrySource:
+            source.send_gimbal_command(f"GIMBAL_NUDGE:{yaw:+.1f},{pitch:+.1f}")
+            self.refresh()
+        elif self.gimbal_available:
             self.station.gimbal.nudge(yaw=yaw, pitch=pitch)
             self.refresh()
 
     def reset_gimbal(self) -> None:
-        if self.gimbal_available:
+        source = self.station.telemetry.source
+        if type(source) is SerialTelemetrySource:
+            source.send_gimbal_command("GIMBAL_HOME:")
+            self.refresh()
+        elif self.gimbal_available:
             self.station.gimbal.reset()
             self.refresh()
 
@@ -886,7 +898,7 @@ class Dashboard:
         roverMode = getattr(sample, "gimbal_mode", None) if remoteGimbal and source.transport_connected else None
         stabilizationAvailable = roverMode is not None if remoteGimbal else self.gimbal_available
         self.input_guard.props(f'data-mode="{self.station.drive.mode}" data-enabled="{str(self.station.drive_input_enabled).lower()}" data-gimbal="{str(self.gimbal_available).lower()}" data-stabilization="{str(stabilizationAvailable).lower()}" data-map-open="{str(self.map_expanded).lower()}"')
-        self.gimbal_controls.set_visibility(self.gimbal_available)
+        self.gimbal_controls.set_visibility(self.gimbal_available or (remoteGimbal and source.transport_connected))
         liveGimbal = (remoteGimbal and sample is not None and
                       sample.gimbal_pan_deg is not None and sample.gimbal_pitch_deg is not None)
         self.gimbal_view.set_visibility(self.gimbal_available or liveGimbal)

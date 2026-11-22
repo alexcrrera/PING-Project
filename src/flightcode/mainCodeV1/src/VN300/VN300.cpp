@@ -77,7 +77,7 @@ void VN300::process_data()
 
   
     int vectornavIdentity = VN300Utilities::getHeader(incomingData);
-  
+
     switch (vectornavIdentity)
     {
 
@@ -108,6 +108,8 @@ void VN300::process_data()
         case 239: // Yaw / Pitch / Roll, Linear Acceleration in Body Frame, Compensated Angular Rates
         { 
             VN300Parsing::parse_YBA_LinearAccel_Gyro(incomingData, measurement_data);
+            measurement_data.attitudeReceived = true;
+            measurement_data.attitudeReceivedAtMs = millis();
           
             break;}
 
@@ -125,7 +127,7 @@ void VN300::manage_incoming_data(){
     // reads one byte at a time from the serial port 
     // and processes it when a newline character is received
 
-    if (vectornav->available() > 0)
+    while (vectornav->available() > 0)
     {
         const char incomingChar = vectornav->read();
 
@@ -133,16 +135,18 @@ void VN300::manage_incoming_data(){
         {
             incomingData[dataIndex] = '\0';
 
+            Serial.print("VN300 incoming data: " );
+            Serial.println(incomingData);
             process_data();
 
             dataIndex = 0;
 
-            return;
+            continue;
         }
 
         if (incomingChar == '\r')
         {
-            return;
+            continue;
         }
 
         if (dataIndex >= bufferSize - 1) //  overflow protection
@@ -160,14 +164,24 @@ void VN300::manage_incoming_data(){
 
 void VN300::poll_GNSS_Solution_LLA()
 {
+    if(!SensorConfig::enable_GNSS_Solution_LLA_polling) {
+        return; // polling is disabled
+    }
     vectornav->println(VN300Utilities::get_cmd_poll_GNSS_Solution_LLA());
 }
 void VN300::poll_INS_Solution_LLA()
 {
+    if(!SensorConfig::enable_INS_Solution_LLA_polling) {
+        return; // polling is disabled
+    }
     vectornav->println(VN300Utilities::get_cmd_poll_INS_Solution_LLA());
 }
 void VN300::poll_YPR_LinearAccel_Gyro()
 {
+
+    if(!SensorConfig::enable_YPR_LinearAccel_Gyro_polling) {
+        return; // polling is disabled
+    }
     vectornav->println(VN300Utilities::get_cmd_poll_YPR_LinearAccel_Gyro());
 }
 

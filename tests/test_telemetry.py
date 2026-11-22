@@ -331,6 +331,23 @@ class SerialSourceTests(unittest.TestCase):
         self.assertIsNone(sample.gimbal_distance_1_m)
         self.assertIsNone(sample.gimbal_distance_2_m)
 
+    def test_gnss_group_new_fields_and_invalid_fix(self):
+        port = FakePort(b"$RVR,GPD,1,12,48.8461234,2.3541234,80.25,1.2,-0.5,0.1,1.25,0.12*\n")
+        source = SerialTelemetrySource("COM3", serial_factory=lambda **kwargs: port)
+        manager = TelemetryManager(source)
+        sample = manager.update(0).sample
+        self.assertEqual((sample.gnss_valid, sample.gnss_num_sats), (True, 12))
+        self.assertEqual((sample.latitude_deg, sample.longitude_deg, sample.altitude_m), (48.8461234, 2.3541234, 80.25))
+        self.assertEqual(sample.gnss_velocity_ned_mps, (1.2, -0.5, 0.1))
+        self.assertEqual((sample.gnss_horizontal_uncertainty_m, sample.gnss_velocity_uncertainty_mps), (1.25, 0.12))
+        port.data = b"$RVR,GPD,0,3,0,0,0,0,0,0,0,0*\n"
+        sample = manager.update(.1).sample
+        self.assertFalse(sample.gnss_valid)
+        self.assertIsNone(sample.latitude_deg)
+        self.assertIsNone(sample.gnss_velocity_ned_mps)
+        port.data = b"$RVR,GPD,1,2.5,48,2,10,0,0,0,1,1*\n"
+        self.assertEqual(manager.update(.2).rejected_count, 1)
+
     def test_rover_groups_decode_and_merge_through_the_serial_source(self):
         port = FakePort(b"$RVR,P1,0.75,-90,")
         manager = TelemetryManager(SerialTelemetrySource("COM3", serial_factory=lambda **kw: port))

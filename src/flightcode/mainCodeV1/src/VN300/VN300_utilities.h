@@ -17,6 +17,7 @@ namespace VN300Utilities
     inline String configureAsynchOutputType(uint type); // Returns the command string to configure the VN300 for asynchronous output of Yaw, Pitch, Roll, Linear Acceleration, and Compensated Angular Rates at the specified frequency.
     inline String configureAsynchOutputFrequency(float frequency); // Returns the command string to configure the VN300 for asynchronous output of Yaw, Pitch, Roll, Linear Acceleration, and Compensated Angular Rates at the specified frequency.
     inline String write_register_VN300_cmd(uint reg, String payload); // Returns the command string to write a value to a specific register on the VN300.
+    inline String read_register_VN300_cmd(uint reg); // Returns the command string to read a value from a specific register on the VN300.
     inline String get_cmd_poll_GNSS_Solution_LLA(); // Returns the command string to poll the VN300 for GNSS Solution LLA data.
     inline String get_cmd_poll_INS_Solution_LLA(); // Returns the command string to poll the VN300 for INS Solution LLA data.
     inline String get_cmd_poll_YPR_LinearAccel_Gyro(); // Returns the command string to poll the VN300 for Yaw, Pitch, Roll, Linear Acceleration, and Compensated Angular Rates data.
@@ -42,19 +43,25 @@ inline int VN300Utilities::getHeader(const char* incomingData)
 // ============================================================
 // VN300 Asynchronous Output Types
 
+inline String VN300Utilities::read_register_VN300_cmd(uint reg)
+{
+   String cmd = "$VNRRG," + String(reg)  + "*XX";
+   return cmd;
+}
+
 inline String VN300Utilities::get_cmd_poll_GNSS_Solution_LLA()
 {
-    return write_register_VN300_cmd(58, ""); // As per VN300 documentation, register 58 is for polling GNSS Solution LLA data
+    return read_register_VN300_cmd(58); // As per VN300 documentation, register 58 is for polling GNSS Solution LLA data
 }
 
 inline String VN300Utilities::get_cmd_poll_INS_Solution_LLA()
 {
-    return write_register_VN300_cmd(63, ""); // As per VN300 documentation, register 63 is for polling INS Solution LLA data
+    return read_register_VN300_cmd(63); // As per VN300 documentation, register 63 is for polling INS Solution LLA data
 }
 
 inline String VN300Utilities::get_cmd_poll_YPR_LinearAccel_Gyro()
 {
-    return write_register_VN300_cmd(240, ""); // As per VN300 documentation, register 240 is for polling Yaw, Pitch, Roll, Linear Acceleration, and Compensated Angular Rates data
+    return read_register_VN300_cmd(240); // As per VN300 documentation, register 240 is for polling Yaw, Pitch, Roll, Linear Acceleration, and Compensated Angular Rates data
 }
 
 
@@ -66,6 +73,7 @@ inline String VN300Utilities::write_register_VN300_cmd(uint reg, String payload)
     String cmd = "$VNWRG," + String(reg) + "," + payload + "*XX";
     return cmd;
 }
+
 
 
 

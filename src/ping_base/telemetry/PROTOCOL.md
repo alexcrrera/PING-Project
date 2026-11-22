@@ -27,7 +27,7 @@ controller must consume this state.
 ## Rover groups
 
 Each frame is `$RVR,<group>,<comma-separated fields>*\n`. CRLF is also accepted.
-Groups arrive independently and update the latest available readings.
+Groups arrive independently and update the latest available readings. ATVL body X is right and Y is forward. GNSS velocity is projected from NED using VN-300 yaw, pitch and roll, assuming its sensor body axes are forward, right and down and aligned with the rover.
 
 When sending wheel data:
 Front-Left
@@ -40,7 +40,7 @@ Rear-right
 | `ATVL` | 15 Hz | Body velocity X and Y (m/s), yaw, pitch, roll (degrees) |
 | `WSST` | 5 Hz | Four wheel angular speeds (RPM), four slip ratios (0–1)|
 | `ACCL` | 5 Hz | Acceleration X/Y/Z (m/s²), linearised (no gravity) in the body frame |
-| `GPD` | 2 Hz | Availability (0 no, 1 yes), latitude longitude, altitude |
+| `GPD` | 2 Hz | Valid 3D fix (0/1), satellites, latitude (deg), longitude (deg), WGS-84 ellipsoid altitude (m), N/E/D velocity (m/s), mean north/east position uncertainty (m), velocity uncertainty (m/s) |
 | `GMBL` | 0.5 Hz | estimated distance horizontal 1, estimated distance 2, estimation validity (0 none, 1 estim good 2 bad, 2: 1 bad 2 good, 3: both good (we use different methods to calculate the horizontal distance from the rover and the measured point with the lidar )), gimbal mode (0: free, 1: yaw follow, 2: yaw and pitch follow), lidar distance, camera pan (body), pitch (body) caemra |
 | `WGD` | 0.5 Hz (disabled) | RPM, current (A), torque (Nm), slip ratio for each wheel in FL, FR, RL, RR order |
 

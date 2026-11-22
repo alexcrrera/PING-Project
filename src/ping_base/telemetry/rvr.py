@@ -47,12 +47,25 @@ def _decode_fields(group: str, fields: tuple[str, ...]) -> dict:
         return {"acceleration_mps2": _numbers(fields, 3)}
 
     if group == "GPD":
-        valid, latitude, longitude, altitude = _numbers(fields, 4)
+        if len(fields) == 4:  # Older firmware.
+            valid, latitude, longitude, altitude = _numbers(fields, 4)
+            sats = None
+            velocity = horizontalUncertainty = velocityUncertainty = None
+        else:
+            valid, sats, latitude, longitude, altitude, north, east, down, horizontalUncertainty, velocityUncertainty = _numbers(fields, 10)
+            if sats < 0 or sats > 255 or not sats.is_integer() or min(horizontalUncertainty, velocityUncertainty) < 0:
+                raise ValueError("Invalid GNSS satellite count or uncertainty")
+            sats = int(sats)
+            velocity = (north, east, down) if valid else None
         if valid not in (0, 1) or not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
             raise ValueError("Invalid GPD fix")
-        return {"latitude_deg": latitude if valid else None,
+        return {"gnss_valid": bool(valid), "gnss_num_sats": sats,
+                "latitude_deg": latitude if valid else None,
                 "longitude_deg": longitude if valid else None,
-                "altitude_m": altitude if valid else None}
+                "altitude_m": altitude if valid else None,
+                "gnss_velocity_ned_mps": velocity,
+                "gnss_horizontal_uncertainty_m": horizontalUncertainty if valid else None,
+                "gnss_velocity_uncertainty_mps": velocityUncertainty if valid else None}
 
     if group == "GMBL":
         distance1, distance2, validity, mode, lidar, pan, tilt = _numbers(fields, 7)
