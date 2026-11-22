@@ -77,21 +77,46 @@ void StateEstimator::updateStructs(LanderState& state, const SensorMeasurements&
     wsst.estimated_slip_ratio_RR = wheels.rear_right.estimated_slip_ratio;
 
 
-    // Use the LiDAR line-of-sight distance for both estimates for now.
+    // Both range estimators currently use the same LiDAR reading.
     const auto& lidar = sensorMeasurements.lidar_data;
-    const float distance = lidar.valid ? lidar.raw_distance_M : 0.0f;
-    state.group_GMBL_data.lidar_distance_M = distance;
-    state.group_GMBL_data.estimated_horizontal_distance_1_M = distance;
-    state.group_GMBL_data.estimated_horizontal_distance_2_M = distance;
-    state.group_GMBL_data.estimation_validity = lidar.valid ? 3 : 0;
-
-    // Gimbal angles are commanded body-relative values.
+    auto& gmbl = state.group_GMBL_data;
+    const bool lidarValid = lidar.valid && millis() - lidar.receivedAtMs < 500;
+    const float distance = lidarValid ? lidar.raw_distance_M : 0.0f;
+    gmbl.lidar_distance_M = distance;
+    gmbl.estimation_validity = 0;
+    gmbl.target_validity = 0;
+    gmbl.estimated_horizontal_distance_1_M = 0;
+    gmbl.estimated_horizontal_distance_2_M = 0;
     if (flight_manager != nullptr)
     {
         const auto& gimbal = flight_manager->getGimbal();
-        state.group_GMBL_data.gimbal_mode = static_cast<uint8_t>(gimbal.getMode());
-        state.group_GMBL_data.pan_angle_DEG = gimbal.getPan_deg();
-        state.group_GMBL_data.tilt_angle_DEG = gimbal.getTilt_deg();
+        gmbl.gimbal_mode = static_cast<uint8_t>(gimbal.getMode());
+        gmbl.pan_angle_DEG = gimbal.getPan_deg();
+        gmbl.tilt_angle_DEG = gimbal.getTilt_deg();
+        float north = 0, east = 0;
+        const bool attitudeValid = vn.attitudeReceived && millis() - vn.attitudeReceivedAtMs < 2000;
+        const auto& imu = vn.ybaLinearAccelGyro;
+        if (lidarValid && attitudeValid && gimbal.projectRangeNed(distance, imu.Yaw, imu.Pitch, imu.Roll, north, east))
+        {
+            const float horizontal = hypotf(north, east);
+            gmbl.estimated_horizontal_distance_1_M = horizontal;
+            gmbl.estimated_horizontal_distance_2_M = horizontal;
+            gmbl.estimation_validity = 3;
+            const double cosLat = cos(gnss.Lat * 0.017453292519943295);
+            if (gpd.isValid && fabs(cosLat) > 0.000001)
+            {
+                const double lat = gnss.Lat + north / 111319.49079327358;
+                double lon = gnss.Lon + east / (111319.49079327358 * cosLat);
+                if (lon > 180) lon -= 360;
+                if (lon < -180) lon += 360;
+                if (lat >= -90 && lat <= 90)
+                {
+                    gmbl.target1_lat = gmbl.target2_lat = lat;
+                    gmbl.target1_lon = gmbl.target2_lon = lon;
+                    gmbl.target_validity = 3;
+                }
+            }
+        }
     }
 
 }

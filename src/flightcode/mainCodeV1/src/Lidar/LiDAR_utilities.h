@@ -10,6 +10,7 @@ struct LidarMeasurement
     float altitude_M = 0.0f;
     float velocity_Down_SI = 0.0f;
     bool valid = false;
+    uint32_t receivedAtMs = 0;
 };
 
 

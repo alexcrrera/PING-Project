@@ -161,6 +161,9 @@ struct GMBL{
     float lidar_distance_M = 0.0f;
     float pan_angle_DEG = 0.0f;
     float tilt_angle_DEG = 0.0f;
+    uint8_t target_validity = 0;
+    double target1_lat = 0.0, target1_lon = 0.0;
+    double target2_lat = 0.0, target2_lon = 0.0;
     
 };
 

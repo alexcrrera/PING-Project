@@ -66,6 +66,15 @@ class NavigationTests(unittest.TestCase):
         for invalid in (None, -1, float('nan')):
             self.assertIsNone(element(world_map(0, 0, 0, 0, horizontal_error_m=invalid), 'gnss-error'))
 
+    def test_gimbal_targets_are_drawn_and_coincident_estimates_share_marker(self):
+        svg = world_map(48, 2, 0, 0, targets=((48.00001, 2), (48.00001, 2)))
+        self.assertIsNotNone(element(svg, 'target-1'))
+        self.assertIsNone(element(svg, 'target-2'))
+        self.assertIn('1/2', svg)
+        svg = world_map(48, 2, 0, 0, targets=(None, (48.00001, 2)))
+        self.assertIsNotNone(element(svg, 'target-2'))
+        self.assertIsNone(element(world_map(None, None, 0, 0, targets=((48, 2),)), 'target-1'))
+
     def test_world_map_without_fix_has_no_marker_or_tile_requests(self):
         for lat, lon in ((None, None), (float('nan'), 2), (91, 2), (48, 181)):
             svg = world_map(lat, lon, 0, 0)

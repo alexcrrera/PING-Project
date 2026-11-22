@@ -7,7 +7,7 @@ from .model import RoverTelemetrySample, validate_sample
 
 GROUP_EXPIRY = {
     "P2": 1.0, "P3": 1.5, "F": 2.5, "LP": 5.0, "P1": 1.5,
-    "RGM": 6.0, "WGD": 5.0, "WSST": 1.0, "ACCL": 1.0, "GPD": 2.5, "GMBL": 5.0, "ATVL": 1.5,
+    "RGM": 6.0, "WGD": 5.0, "WSST": 1.0, "ACCL": 1.0, "GPD": 2.5, "GMBL": 1.5, "ATVL": 1.5,
 }
 BRAKE_FLAGS = {"[OK]": True, "[X]": False, "1": True, "0": False}
 
@@ -68,13 +68,23 @@ def _decode_fields(group: str, fields: tuple[str, ...]) -> dict:
                 "gnss_velocity_uncertainty_mps": velocityUncertainty if valid else None}
 
     if group == "GMBL":
-        distance1, distance2, validity, mode, lidar, pan, tilt = _numbers(fields, 7)
+        values = _numbers(fields, len(fields))
+        if len(values) not in (7, 12):
+            raise ValueError("Invalid gimbal field count")
+        distance1, distance2, validity, mode, lidar, pan, tilt = values[:7]
+        targets = None
+        if len(values) == 12:
+            targetMask, lat1, lon1, lat2, lon2 = values[7:]
+            if targetMask not in range(4) or any(abs(lat) > 90 or abs(lon) > 180 for lat, lon in ((lat1, lon1), (lat2, lon2))):
+                raise ValueError("Invalid gimbal target")
+            targets = ((lat1, lon1) if int(targetMask) & 1 else None,
+                       (lat2, lon2) if int(targetMask) & 2 else None)
         if validity not in range(4) or mode not in range(3):
             raise ValueError("Invalid gimbal validity mask or mode")
         mask = int(validity)
         if lidar < 0 or (mask & 1 and distance1 < 0) or (mask & 2 and distance2 < 0):
             raise ValueError("Valid gimbal distances must be nonnegative")
-        return {"gimbal_pan_deg": pan, "gimbal_pitch_deg": tilt, "gimbal_mode": int(mode),
+        return {"gimbal_targets": targets, "gimbal_pan_deg": pan, "gimbal_pitch_deg": tilt, "gimbal_mode": int(mode),
                 "gimbal_lidar_distance_m": lidar if mask else None,
                 "gimbal_distance_1_m": distance1 if mask & 1 else None,
                 "gimbal_distance_2_m": distance2 if mask & 2 else None,

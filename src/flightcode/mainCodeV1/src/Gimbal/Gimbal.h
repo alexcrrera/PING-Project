@@ -22,6 +22,9 @@ public:
     bool setMode(GimbalMode mode);
     bool setAngles(float pan_deg, float tilt_deg);
     bool home();
+    // Project a line-of-sight range to north/east using FRD sensor attitude.
+    bool projectRangeNed(float range_m, float yaw_deg, float pitch_deg, float roll_deg,
+                         float& north_m, float& east_m) const;
 
     GimbalMode getMode() const { return mode; }
     float getPan_deg() const { return pan_deg; }

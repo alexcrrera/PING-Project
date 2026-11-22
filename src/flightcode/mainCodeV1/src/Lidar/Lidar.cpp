@@ -102,6 +102,7 @@ bool Lidar::readDistance()
 
     measurement.raw_distance_M = distance_cm * 0.01f; // Convert cm to meters
     measurement.valid = distance_cm > 0;
+    if (measurement.valid) measurement.receivedAtMs = millis();
 
     return true;
 }

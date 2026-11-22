@@ -48,6 +48,7 @@ class RoverTelemetrySample(TelemetrySample):
     longitude_deg: float | None = None
     latitude_deg: float | None = None
     altitude_m: float | None = None
+    gimbal_targets: tuple[tuple[float, float] | None, tuple[float, float] | None] | None = None
     gimbal_pitch_deg: float | None = None
     gimbal_pan_deg: float | None = None
     gimbal_mode: int | None = None

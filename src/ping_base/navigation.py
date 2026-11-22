@@ -189,7 +189,8 @@ def world_map(latitude: float | None, longitude: float | None,
               heading_deg: float | None, camera_heading_deg: float | None,
               trail: tuple[tuple[float, float], ...] = (), *, zoom: float = 1,
               layer: str = "street", horizontal_error_m: float | None = None,
-              thunderforest_key: str = "", maptiler_key: str = "") -> str:
+              thunderforest_key: str = "", maptiler_key: str = "",
+              targets: tuple = ()) -> str:
     """North-up map centered on a geographic fix, using OpenStreetMap tiles.
 
     Tiles are requested by the browser and require internet access. GPS remains
@@ -260,6 +261,21 @@ def world_map(latitude: float | None, longitude: float | None,
             radius = horizontal_error_m / (2 * metersPerPixel)
             content += (f'<circle data-role="gnss-error" cx="200" cy="200" r="{radius:.3f}" '
                         'fill="#65ddff" fill-opacity=".15" stroke="#65ddff" stroke-width="1.5"/>')
+        for index, target in enumerate(targets[:2], 1):
+            if (not isinstance(target, (tuple, list)) or len(target) != 2 or
+                    not all(_finite(v) for v in target) or abs(target[0]) > 90 or abs(target[1]) > 180):
+                continue
+            x, y = project(*target)
+            dx = (x - centerX + worldSize / 2) % worldSize - worldSize / 2
+            px, py = 200 + dx, 200 + y - centerY
+            # Coincident estimates share one marker, with both indices.
+            if index == 2 and targets[0] == target:
+                continue
+            markerLabel = '1/2' if index == 1 and len(targets) > 1 and targets[1] == target else str(index)
+            content += (f'<g data-role="target-{index}" transform="translate({px:.2f} {py:.2f})">'
+                        '<circle r="7" fill="#17160f" stroke="#ffc166" stroke-width="2"/>'
+                        f'<circle r="2" fill="#ffc166"/><text x="10" y="-8" fill="#fff" '
+                        f'stroke="#111" stroke-width="3" paint-order="stroke" font-size="10">{markerLabel}</text></g>')
         if _finite(camera_heading_deg):
             content += (f'<g data-role="camera" transform="translate(200 200) rotate({camera_heading_deg % 360:.2f})" '
                         f'stroke="{_CAMERA_COLOR}" stroke-linejoin="round">'

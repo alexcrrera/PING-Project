@@ -331,6 +331,15 @@ class SerialSourceTests(unittest.TestCase):
         self.assertIsNone(sample.gimbal_distance_1_m)
         self.assertIsNone(sample.gimbal_distance_2_m)
 
+    def test_gimbal_target_coordinates_and_validity(self):
+        port = FakePort(b"$RVR,GMBL,5,5,3,2,5,0,0,3,48.1234567,2.1234567,48.1234567,2.1234567*\n")
+        source = SerialTelemetrySource("COM3", serial_factory=lambda **kwargs: port)
+        manager = TelemetryManager(source)
+        sample = manager.update(0).sample
+        self.assertEqual(sample.gimbal_targets, ((48.1234567, 2.1234567), (48.1234567, 2.1234567)))
+        port.data = b"$RVR,GMBL,0,0,0,2,0,0,0,0,0,0,0,0*\n"
+        self.assertEqual(manager.update(.1).sample.gimbal_targets, (None, None))
+
     def test_gnss_group_new_fields_and_invalid_fix(self):
         port = FakePort(b"$RVR,GPD,1,12,48.8461234,2.3541234,80.25,1.2,-0.5,0.1,1.25,0.12*\n")
         source = SerialTelemetrySource("COM3", serial_factory=lambda **kwargs: port)

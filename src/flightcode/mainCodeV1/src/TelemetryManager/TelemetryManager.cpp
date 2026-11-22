@@ -63,6 +63,11 @@ namespace
         addTelemetryField(payload, data.lidar_distance_M, 2);
         addTelemetryField(payload, data.pan_angle_DEG, 2);
         addTelemetryField(payload, data.tilt_angle_DEG, 2);
+        addTelemetryField(payload, data.target_validity);
+        addTelemetryField(payload, data.target1_lat, 7);
+        addTelemetryField(payload, data.target1_lon, 7);
+        addTelemetryField(payload, data.target2_lat, 7);
+        addTelemetryField(payload, data.target2_lon, 7);
     }
 
     void appendWGDFields(String& payload, const LanderState& state)

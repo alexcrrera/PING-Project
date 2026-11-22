@@ -72,6 +72,9 @@ GROUP_FIELDS = {
                    "Ellipsoid altitude (m)", "North velocity (m/s)", "East velocity (m/s)",
                    "Down velocity (m/s)", "Horizontal uncertainty (m)", "Velocity uncertainty (m/s)"),
     ("GPD", 4): ("Valid fix", "Latitude (°)", "Longitude (°)", "Altitude MSL (m)"),
+    ("GMBL", 12): ("Range 1 (m)", "Range 2 (m)", "Validity mask", "Mode", "LiDAR (m)",
+                   "Pan (deg)", "Tilt (deg)", "Target mask", "Target 1 latitude", "Target 1 longitude",
+                   "Target 2 latitude", "Target 2 longitude"),
     ("GMBL", 7): ("Range 1 (m)", "Range 2 (m)", "Validity mask", "Mode",
                   "LiDAR (m)", "Pan (°)", "Tilt (°)"),
     ("WGD", 16): tuple(f"{wheel} {channel}" for wheel in ("FL", "FR", "RL", "RR")
@@ -963,11 +966,12 @@ class Dashboard:
             values = (None,) * 4
         zoom = MAP_ZOOM_LEVELS[self.map_zoom_index]
         horizontalError = getattr(sample, "gnss_horizontal_uncertainty_m", None) if position else None
-        navigation = (*values, zoom, self.map_layer, horizontalError, tuple(self._navigation_trail))
+        targets = getattr(sample, "gimbal_targets", None) if position and not simulated else None
+        navigation = (*values, zoom, self.map_layer, horizontalError, targets, tuple(self._navigation_trail))
         if navigation != self._last_navigation:
             content = world_map(*values, trail=tuple(self._navigation_trail), zoom=zoom, layer=self.map_layer,
                                 horizontal_error_m=horizontalError, thunderforest_key=self.thunderforest_key,
-                                maptiler_key=self.maptiler_key)
+                                maptiler_key=self.maptiler_key, targets=targets or ())
             self._map_content = content
             self._update_map_element(self.map_mini, content)
             if self.map_expanded:
